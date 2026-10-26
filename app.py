@@ -15,8 +15,9 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import plotly.graph_objects as go
 import primer3
+import time
 
-st.set_page_config(page_title="GBS2CAPS: Advanced CAPS Marker Designer", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="AutoCAPS: Advanced Marker Designer", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
@@ -41,8 +42,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1>🧬 GBS2CAPS: Advanced CAPS Marker Designer</h1>", unsafe_allow_html=True)
-st.markdown("### Bioinformatics and Molecular Breeding Platform")
+st.markdown("<h1>🧬 AutoCAPS: Advanced CAPS Marker Designer</h1>", unsafe_allow_html=True)
+st.markdown("### Standalone Bioinformatics Pipeline for Automated Marker Conversion")
 st.markdown("<div class='credit-text'>System Architect & Lead Developer: Assoc. Prof. Dr. Ibrahim Celik</div>", unsafe_allow_html=True)
 st.divider()
 
@@ -390,6 +391,12 @@ if run_btn:
     if not vcf_file or not fasta_file:
         st.error("Please upload both VCF and FASTA files.")
     else:
+        st.info("⏳ **Pipeline is running!** Depending on your VCF size, this may take a few minutes. **Please DO NOT close or refresh this tab.**")
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        status_text.markdown("🔄 **%0** - Parsing VCF file and removing multi-allelic variants...")
         df = parse_vcf(vcf_file)
         valid_bases = ['A', 'C', 'G', 'T']
         df = df[~df['ALT'].str.contains(',', na=False)]
@@ -397,8 +404,10 @@ if run_btn:
         df = df.drop_duplicates(subset=['CHROM', 'POS', 'REF', 'ALT']).reset_index(drop=True)
         
         if len(df) == 0: 
+            status_text.markdown("❌ **Analysis Stopped.**")
             st.warning("No suitable Biallelic SNP found in this VCF file!")
         else:
+            status_text.markdown("🔄 **%2** - Extracting and indexing FASTA reference genome...")
             file_extension = ".fa.gz" if fasta_file.name.endswith(".gz") else ".fasta"
             with tempfile.NamedTemporaryFile(delete=False, suffix=".fasta") as tmp_fasta:
                 if fasta_file.name.endswith(".gz"):
@@ -414,9 +423,30 @@ if run_btn:
                 
                 results, all_enzymes = [], []
                 chrom_lengths = {}
-                progress_bar = st.progress(0)
+                total_snps = len(df)
+                
+                start_time = time.time() # Analizin başlangıç anını kaydet
                 
                 for i, row in df.iterrows():
+                    processed = i + 1
+                    elapsed_time = time.time() - start_time
+                    
+                    # ETA (Tahmini Kalan Süre) Hesabı
+                    if processed > 0:
+                        avg_time_per_snp = elapsed_time / processed
+                        remaining_snps = total_snps - processed
+                        eta_seconds = int(remaining_snps * avg_time_per_snp)
+                        
+                        mins, secs = divmod(eta_seconds, 60)
+                        eta_str = f"{mins} dk {secs} sn" if mins > 0 else f"{secs} sn"
+                    else:
+                        eta_str = "Hesaplanıyor..."
+                    
+                    # İlerleme durumunu güncelle
+                    pct = int((processed / total_snps) * 100)
+                    progress_bar.progress(pct / 100.0)
+                    status_text.markdown(f"⚙️ **%{pct} Tamamlandı** - İşlenen SNP: {processed}/{total_snps} | ⏳ **Kalan Süre:** {eta_str}")
+                    
                     chrom, pos, ref, alt, snp_id = str(row['CHROM']), int(row['POS']), str(row['REF']), str(row['ALT']), str(row['ID'])
                     actual_chrom = find_fasta_chrom(chrom, fasta_keys)
                     
@@ -459,8 +489,9 @@ if run_btn:
                             'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
                             'CAPS_Restriction_Profile': f"VCF '{chrom}' did not match FASTA"
                         })
-                    
-                    if i % 10 == 0 or i == len(df) - 1: progress_bar.progress(min((i + 1) / len(df), 1.0))
+                
+                status_text.markdown("✅ **%100 Tamamlandı** - Analiz sonuçları ekrana yansıtılıyor...")
+                time.sleep(1)
                 
                 st.session_state['result_df'] = pd.DataFrame(results)
                 st.session_state['all_enzymes'] = all_enzymes
@@ -581,4 +612,4 @@ if 'result_df' in st.session_state:
         export_df = filt_df.copy()
         export_df['Used_Enzyme_List'] = export_df['Used_Enzyme_List'].apply(lambda x: ", ".join(x))
         export_df.to_excel(writer, sheet_name='Filtered_Markers', index=False)
-    st.download_button("📂 Download Filtered Report as Excel", output.getvalue(), f"GBS2CAPS_{sel_chrom}_{sel_enz}.xlsx")
+    st.download_button("📂 Download Filtered Report as Excel", output.getvalue(), f"AutoCAPS_{sel_chrom}_{sel_enz}.xlsx")
