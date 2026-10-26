@@ -419,7 +419,7 @@ if run_btn:
                 results, all_enzymes = [], []
                 chrom_lengths = {}
                 total_snps = len(df)
-                batch_size = 100  # 100'erli gruplar halinde işleme
+                batch_size = 1000  # 1000'erli gruplar halinde işleme
                 
                 start_time = time.time()
                 
@@ -471,17 +471,17 @@ if run_btn:
                                 'CAPS_Restriction_Profile': f"VCF '{chrom}' did not match FASTA"
                             })
                     
-                    # HER BATCH SONUNDA EKRANI GÜNCELLE (HIZI KESMEZ, GEÇEN SÜREYİ GÖSTERİR)
+                    # HER 1000'LÜK BATCH SONUNDA EKRANI VE GEÇEN SÜREYİ GÜNCELLE
                     processed_count = end_idx
                     elapsed_secs = int(time.time() - start_time)
                     mins, secs = divmod(elapsed_secs, 60)
-                    time_str = f"{mins} dk {secs} sn" if mins > 0 else f"{secs} sn"
+                    time_str = f"{mins} min {secs} sec" if mins > 0 else f"{secs} sec"
                     
                     pct = int((processed_count / total_snps) * 100)
                     progress_bar.progress(pct / 100.0)
-                    status_text.markdown(f"⚙️ **%{pct} Tamamlandı** ({processed_count}/{total_snps} SNPs) | ⏱️ **Geçen Süre:** {time_str}")
+                    status_text.markdown(f"⚙️ **{pct}% Completed** ({processed_count}/{total_snps} SNPs) | ⏱️ **Elapsed Time:** {time_str}")
                 
-                status_text.markdown("✅ **%100 Tamamlandı** - Analiz sonuçları ekrana yansıtılıyor...")
+                status_text.markdown("✅ **100% Completed** - Rendering analysis results...")
                 time.sleep(0.5)
                 
                 st.session_state['result_df'] = pd.DataFrame(results)
