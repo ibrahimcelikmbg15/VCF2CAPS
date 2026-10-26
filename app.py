@@ -425,27 +425,24 @@ if run_btn:
                 chrom_lengths = {}
                 total_snps = len(df)
                 
-                start_time = time.time() # Analizin başlangıç anını kaydet
+                start_time = time.time()
                 
                 for i, row in df.iterrows():
                     processed = i + 1
-                    elapsed_time = time.time() - start_time
                     
-                    # ETA (Tahmini Kalan Süre) Hesabı
-                    if processed > 0:
+                    # EKRANI SADECE HER 10 SNP'DE BIR (VEYA SON ADIMDA) GUNCELLE
+                    if processed % 10 == 0 or processed == total_snps:
+                        elapsed_time = time.time() - start_time
                         avg_time_per_snp = elapsed_time / processed
                         remaining_snps = total_snps - processed
                         eta_seconds = int(remaining_snps * avg_time_per_snp)
                         
                         mins, secs = divmod(eta_seconds, 60)
                         eta_str = f"{mins} dk {secs} sn" if mins > 0 else f"{secs} sn"
-                    else:
-                        eta_str = "Hesaplanıyor..."
-                    
-                    # İlerleme durumunu güncelle
-                    pct = int((processed / total_snps) * 100)
-                    progress_bar.progress(pct / 100.0)
-                    status_text.markdown(f"⚙️ **%{pct} Tamamlandı** - İşlenen SNP: {processed}/{total_snps} | ⏳ **Kalan Süre:** {eta_str}")
+                        
+                        pct = int((processed / total_snps) * 100)
+                        progress_bar.progress(pct / 100.0)
+                        status_text.markdown(f"⚙️ **%{pct} Tamamlandı** - İşlenen SNP: {processed}/{total_snps} | ⏳ **Kalan Süre:** {eta_str}")
                     
                     chrom, pos, ref, alt, snp_id = str(row['CHROM']), int(row['POS']), str(row['REF']), str(row['ALT']), str(row['ID'])
                     actual_chrom = find_fasta_chrom(chrom, fasta_keys)
