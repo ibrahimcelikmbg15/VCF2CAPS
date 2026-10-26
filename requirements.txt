@@ -5,3 +5,4 @@ pyfaidx
 matplotlib
 xlsxwriter
 primer3-py
+plotly
