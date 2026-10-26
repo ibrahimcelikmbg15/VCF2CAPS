@@ -1,9 +1,11 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
 import io
 import tempfile
 import os
 import shutil
+import gzip
 from pyfaidx import Fasta
 from Bio.Seq import Seq
 from Bio import Restriction
@@ -185,8 +187,12 @@ def main():
             if len(df) == 0: return st.warning("No suitable Biallelic SNP found in this VCF file!")
             
             file_extension = ".fa.gz" if fasta_file.name.endswith(".gz") else ".fasta"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp_fasta:
-                shutil.copyfileobj(fasta_file, tmp_fasta)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".fasta") as tmp_fasta:
+                if fasta_file.name.endswith(".gz"):
+                    with gzip.open(fasta_file, 'rb') as f_in:
+                        shutil.copyfileobj(f_in, tmp_fasta)
+                else:
+                    shutil.copyfileobj(fasta_file, tmp_fasta)
                 fasta_path = tmp_fasta.name
             
             try:
@@ -230,7 +236,6 @@ def main():
             fasta_obj.close()
             os.remove(fasta_path)
             if os.path.exists(fasta_path + ".fai"): os.remove(fasta_path + ".fai")
-            if os.path.exists(fasta_path + ".gzi"): os.remove(fasta_path + ".gzi")
             
             result_df = pd.DataFrame(results)
             
