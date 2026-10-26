@@ -391,6 +391,8 @@ if run_btn:
     if not vcf_file or not fasta_file:
         st.error("Please upload both VCF and FASTA files.")
     else:
+        st.warning("⚠️ **Pipeline is running!** Depending on your VCF size, this may take a few minutes. **Please DO NOT close or refresh this tab.**")
+        
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -471,7 +473,7 @@ if run_btn:
                                 'CAPS_Restriction_Profile': f"VCF '{chrom}' did not match FASTA"
                             })
                     
-                    # HER 1000'LÜK BATCH SONUNDA EKRANI VE GEÇEN SÜREYİ GÜNCELLE
+                    # HER 1000'LÜK BATCH SONUNDA EKRANI VE GEÇEN SÜREYİ ANLIK GÜNCELLE
                     processed_count = end_idx
                     elapsed_secs = int(time.time() - start_time)
                     mins, secs = divmod(elapsed_secs, 60)
