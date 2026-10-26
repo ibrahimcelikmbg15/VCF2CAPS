@@ -15,59 +15,34 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import primer3
 
-st.set_page_config(page_title="GBS2CAPS: TaqMan & CAPS Tasarım", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="GBS2CAPS: TaqMan & CAPS Marker Designer", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
     <style>
-    .stApp {background-color: #030712;}
-    h1, h2, h3, p, label, li {color: #ffffff !important;}
-    .stTextArea textarea {
-        background-color: #020617 !important;
-        color: #00ffcc !important; 
-        font-family: 'Courier New', Consolas, monospace !important;
-        font-size: 1.05rem !important;
-        border: 2px solid #1e293b !important;
-        border-radius: 8px;
-    }
-    .stTextArea textarea:focus {
-        border: 2px solid #10b981 !important;
-        box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
-    }
-    .stButton>button {
-        background-color: transparent;
-        color: #10b981 !important;
-        font-weight: 800;
-        font-size: 1.1rem;
-        border-radius: 8px;
-        border: 2px solid #10b981;
-        box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
-        transition: all 0.3s ease-in-out;
-    }
-    .stButton>button:hover {
-        background-color: #10b981;
-        color: #000000 !important;
-        box-shadow: 0 0 20px rgba(16, 185, 129, 0.8);
-        border: 2px solid #10b981;
-    }
-    .credit-text {
-        font-size: 1.2rem;
-        color: #00e5ff !important;
-        font-weight: 800;
-        border-left: 4px solid #00e5ff;
-        padding-left: 15px;
-        margin-top: 5px;
-        letter-spacing: 0.5px;
-    }
     .metric-box {
-        background-color: #0f172a;
-        border: 1px solid #1e293b;
+        background-color: #f8fafc;
+        border: 1px solid #cbd5e1;
         border-radius: 8px;
         padding: 15px;
         text-align: center;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+    @media (prefers-color-scheme: dark) {
+        .metric-box {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+        }
     }
     .metric-value { font-size: 2rem; font-weight: bold; color: #10b981; }
-    .metric-label { font-size: 1rem; color: #94a3b8; }
+    .metric-label { font-size: 1rem; color: #64748b; }
+    .credit-text {
+        font-size: 1.1rem;
+        color: #0ea5e9;
+        font-weight: 700;
+        border-left: 4px solid #0ea5e9;
+        padding-left: 15px;
+        margin-top: 5px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -80,9 +55,9 @@ with col_logo:
         st.markdown("🧬")
 
 with col_title:
-    st.markdown("<h1>🧬 SNP-Spesifik CAPS Markör Tasarlayıcı v2.0</h1>", unsafe_allow_html=True)
-    st.markdown("### **Genom Okulu** | Biyoinformatik ve Moleküler Islah Platformu")
-    st.markdown("<div class='credit-text'>Sistem Mimarı ve Baş Geliştirici: Doç. Dr. İbrahim Çelik</div>", unsafe_allow_html=True)
+    st.markdown("<h1>🧬 GBS2CAPS: TaqMan & CAPS Marker Designer</h1>", unsafe_allow_html=True)
+    st.markdown("### **Genom Okulu** | Bioinformatics and Molecular Breeding Platform")
+    st.markdown("<div class='credit-text'>System Architect & Lead Developer: Assoc. Prof. Dr. Ibrahim Celik</div>", unsafe_allow_html=True)
 
 def parse_vcf(file_obj):
     lines = []
@@ -144,72 +119,72 @@ def analyze_amplicon(amplicon_ref, amplicon_alt, ref, alt):
             
     return " || ".join(profiles) if profiles else "No Suitable/Selective Enzyme Found", len(profiles), enz_list
 
-def get_reverse_complement(seq):
-    complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A', 'N': 'N'}
-    return "".join(complement.get(base, base) for base in reversed(seq))
-
-def calculate_tm(seq):
-    return (4 * (seq.count('G') + seq.count('C'))) + (2 * (seq.count('A') + seq.count('T')))
-
 def design_marker(left_flank, ref, alt, right_flank, snp_id, p_size, p_tm, tm_diff, p_gc, p_prod, f_len):
-    p_size, min_prod, max_prod = int(p_size), int(p_prod[0]), int(p_prod[1])
     half_f = f_len // 2
     c_left = left_flank[-half_f:] if len(left_flank) >= half_f else left_flank
     formatli_snp = f"{c_left}[{ref}/{alt}]{right_flank[:half_f]}"
     
-    valid_fwds, valid_revs = [], []
-    for i in range(len(left_flank) - p_size + 1):
-        cand = left_flank[i:i+p_size]
-        if p_gc[0] <= ((cand.count('G') + cand.count('C')) / p_size) * 100 <= p_gc[1]:
-            tm = calculate_tm(cand)
-            if abs(tm - p_tm) <= tm_diff + 5: valid_fwds.append((i, cand, tm))
-                
-    for i in range(len(right_flank) - p_size + 1):
-        cand, rev_cand = right_flank[i:i+p_size], get_reverse_complement(right_flank[i:i+p_size])
-        if p_gc[0] <= ((rev_cand.count('G') + rev_cand.count('C')) / p_size) * 100 <= p_gc[1]:
-            tm = calculate_tm(rev_cand)
-            if abs(tm - p_tm) <= tm_diff + 5: valid_revs.append((i + p_size, rev_cand, tm))
-
-    fwd_seq, rev_seq, fwd_tm, rev_tm, best_left, best_right, best_diff = "-", "-", 0, 0, 0, 0, 9999
-    target_ideal = (min_prod + max_prod) / 2
+    seq_ref = left_flank + ref + right_flank
+    seq_alt = left_flank + alt + right_flank
+    target_pos = len(left_flank)
     
-    for l_pos, f_seq, f_tm in valid_fwds:
-        for r_pos, r_seq, r_tm in valid_revs:
-            if abs(f_tm - r_tm) <= tm_diff + 2:
-                prod_size = (len(left_flank) - l_pos) + len(ref) + r_pos
-                if min_prod <= prod_size <= max_prod:
-                    diff = abs(prod_size - target_ideal)
-                    if diff < best_diff:
-                        best_diff, fwd_seq, fwd_tm, best_left, rev_seq, rev_tm, best_right = diff, f_seq, f_tm, l_pos, r_seq, r_tm, r_pos
-
-    if fwd_seq != "-":
-        prod_size = (len(left_flank) - best_left) + len(ref) + best_right
-        amplicon_ref = left_flank[best_left:] + ref + right_flank[:best_right]
-        amplicon_alt = left_flank[best_left:] + alt + right_flank[:best_right]
+    seq_dict = {
+        'SEQUENCE_ID': str(snp_id),
+        'SEQUENCE_TEMPLATE': seq_ref,
+        'SEQUENCE_TARGET': [target_pos, len(ref)]
+    }
+    primer_opt = {
+        'PRIMER_OPT_SIZE': p_size,
+        'PRIMER_MIN_SIZE': max(15, p_size - 5),
+        'PRIMER_MAX_SIZE': min(35, p_size + 5),
+        'PRIMER_OPT_TM': p_tm,
+        'PRIMER_MIN_TM': p_tm - tm_diff,
+        'PRIMER_MAX_TM': p_tm + tm_diff,
+        'PRIMER_PRODUCT_SIZE_RANGE': [list(p_prod)],
+        'PRIMER_MIN_GC': p_gc[0],
+        'PRIMER_MAX_GC': p_gc[1]
+    }
+    
+    try:
+        primers = primer3.bindings.design_primers(seq_dict, primer_opt)
+        if primers['PRIMER_LEFT_NUM_RETURNED'] > 0:
+            f_seq = primers['PRIMER_LEFT_0_SEQUENCE']
+            r_seq = primers['PRIMER_RIGHT_0_SEQUENCE']
+            f_tm_val = round(primers['PRIMER_LEFT_0_TM'], 1)
+            r_tm_val = round(primers['PRIMER_RIGHT_0_TM'], 1)
+            pcr_size = primers['PRIMER_PAIR_0_PRODUCT_SIZE']
+            
+            left_pos = primers['PRIMER_LEFT_0'][0]
+            right_pos = primers['PRIMER_RIGHT_0'][0]
+            
+            amplicon_ref = seq_ref[left_pos:right_pos+1]
+            amplicon_alt = seq_alt[left_pos:right_pos+1]
+            
+            amplicon_ref = re.sub(r'[^ACGTURYSWKMBDHVN]', 'N', amplicon_ref.upper())
+            amplicon_alt = re.sub(r'[^ACGTURYSWKMBDHVN]', 'N', amplicon_alt.upper())
+            
+            snp_amp_pos = target_pos - left_pos
+            probe_start, probe_end = max(0, snp_amp_pos - 10), min(len(amplicon_ref), snp_amp_pos + 11)
+            p_ref = amplicon_ref[probe_start:probe_end]
+            p_alt = amplicon_alt[probe_start:probe_end]
+            
+            c_prof, enz_c, enz_l = analyze_amplicon(amplicon_ref, amplicon_alt, ref, alt)
+            return f_seq, r_seq, f_tm_val, r_tm_val, pcr_size, p_ref, p_alt, formatli_snp, c_prof, enz_c, enz_l
+    except:
+        pass
         
-        amplicon_ref = re.sub(r'[^ACGTURYSWKMBDHVN]', 'N', amplicon_ref.upper())
-        amplicon_alt = re.sub(r'[^ACGTURYSWKMBDHVN]', 'N', amplicon_alt.upper())
-        
-        snp_amp_pos = len(left_flank) - best_left
-        probe_start, probe_end = max(0, snp_amp_pos - 10), min(len(amplicon_ref), snp_amp_pos + 11)
-        
-        cut_profile, enz_count, enz_list = analyze_amplicon(amplicon_ref, amplicon_alt, ref, alt)
-        return (fwd_seq, rev_seq, round(fwd_tm, 1), round(rev_tm, 1), prod_size, amplicon_ref[probe_start:probe_end], amplicon_alt[probe_start:probe_end], formatli_snp, cut_profile, enz_count, enz_list)
-        
-    return ("Primer Bulunamadı", "Primer Bulunamadı", 0, 0, 0, "-", "-", formatli_snp, "Uygun Amplikon Yok", 0, [])
+    return "Primer Not Found", "Primer Not Found", 0, 0, 0, "-", "-", formatli_snp, "No Suitable Amplicon", 0, []
 
 def plot_physical_map(df, selected_enzyme):
     fig, ax = plt.subplots(figsize=(12, min(8, len(df['CHROM'].unique()) * 0.8)))
-    fig.patch.set_facecolor('#030712')
-    ax.set_facecolor('#030712')
     
-    if selected_enzyme == "Tüm Başarılı Enzimler":
-        plot_df = df[df['Uyumlu_Enzim_Sayısı'] > 0]
+    if selected_enzyme == "All Successful Enzymes":
+        plot_df = df[df['Compatible_Enzyme_Count'] > 0]
     else:
-        plot_df = df[df['Kullanılan_Enzim_Listesi'].apply(lambda x: selected_enzyme in x)]
+        plot_df = df[df['Used_Enzyme_List'].apply(lambda x: selected_enzyme in x)]
 
     if plot_df.empty:
-        ax.text(0.5, 0.5, "Bu filtreye uygun SNP bulunamadı.", color='white', ha='center', va='center')
+        ax.text(0.5, 0.5, "No SNPs found matching this filter.", ha='center', va='center')
         ax.axis('off')
         return fig
 
@@ -223,23 +198,20 @@ def plot_physical_map(df, selected_enzyme):
         chrom_df = plot_df[plot_df['CHROM'] == chrom]
         
         max_pos = chrom_df['POS'].max() / 1_000_000
-        ax.hlines(y_pos, 0, max_pos + 1, color='#1e293b', linewidth=5, zorder=1) 
+        ax.hlines(y_pos, 0, max_pos + 1, color='lightgray', linewidth=5, zorder=1) 
         ax.plot(chrom_df['POS'] / 1_000_000, [y_pos]*len(chrom_df), '|', color='#10b981', markersize=20, markeredgewidth=2, zorder=2)
 
     ax.set_yticks(y_ticks)
-    ax.set_yticklabels(y_labels, color='white')
-    ax.set_xlabel("Fiziksel Pozisyon (Mb)", color='white')
-    ax.set_title(f"Genom Dağılımı: {selected_enzyme}", fontweight='bold', color='white')
-    ax.tick_params(colors='white')
+    ax.set_yticklabels(y_labels)
+    ax.set_xlabel("Physical Position (Mb)")
+    ax.set_title(f"Genome Distribution: {selected_enzyme}", fontweight='bold')
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.spines['left'].set_visible(False)
-    ax.spines['bottom'].set_color('#1e293b')
     plt.tight_layout()
     return fig
 
 def parse_profile_for_gel(profile_str, enzyme, ref, alt, pcr_size):
-    # Örnek profile_str: "AanI -> Allele G: [200bp (No Cut)] | Allele A: [116bp + 84bp] || Baul -> ..."
     frag_data = {ref: [pcr_size], alt: [pcr_size]}
     if not profile_str or "No Suitable" in profile_str:
         return frag_data
@@ -255,7 +227,6 @@ def parse_profile_for_gel(profile_str, enzyme, ref, alt, pcr_size):
     
     alleles_split = target_prof.split(" | ")
     for part in alleles_split:
-        # Örnek parça: "AanI -> Allele G: [200bp (No Cut)]" veya "Allele A: [116bp + 84bp]"
         m = re.search(r'Allele (.*?): \[(.*?)\]', part)
         if m:
             al = m.group(1).strip()
@@ -280,16 +251,16 @@ def render_gel_simulator(frag_data, ref, alt, pcr_size, enzyme):
     
     lanes = {
         "DNA\nMarker": marker_bands,
-        f"Alel 1\n({ref}{ref})": frags1,
-        f"Alel 2\n({alt}{alt})": frags2,
-        f"Melez\n({ref}{alt})": sorted(list(set(frags1 + frags2)), reverse=True)
+        f"Allele 1\n({ref}{ref})": frags1,
+        f"Allele 2\n({alt}{alt})": frags2,
+        f"Hybrid\n({ref}{alt})": sorted(list(set(frags1 + frags2)), reverse=True)
     }
     
     well_y = max_bp + 50
     for i in range(1, len(lanes) + 1):
         well = patches.Rectangle((i - 0.25, well_y), 0.5, max_bp * 0.03, fill=False, edgecolor='#334155', lw=2)
         ax.add_patch(well)
-        ax.text(i, well_y + (max_bp * 0.04), "KUYU", color='#94a3b8', ha='center', fontsize=9, fontweight='bold')
+        ax.text(i, well_y + (max_bp * 0.04), "WELL", color='#94a3b8', ha='center', fontsize=9, fontweight='bold')
         
     for i, (lane_name, bands) in enumerate(lanes.items()):
         x = i + 1
@@ -307,28 +278,28 @@ def render_gel_simulator(frag_data, ref, alt, pcr_size, enzyme):
     ax.tick_params(colors='#ffffff', axis='y', labelsize=10)
     for spine in ax.spines.values():
         spine.set_color('#1e293b')
-    ax.set_ylabel("DNA Büyüklüğü (bp)", color='#ffffff', fontsize=12, fontweight='bold')
-    ax.set_title(f"{enzyme} Restriksiyon Profili", color='#10b981', fontweight='bold', fontsize=14, pad=20)
+    ax.set_ylabel("DNA Size (bp)", color='#ffffff', fontsize=12, fontweight='bold')
+    ax.set_title(f"{enzyme} Restriction Profile", color='#10b981', fontweight='bold', fontsize=14, pad=20)
     return fig
 
-# --- YAN PANEL AYARLARI ---
-st.sidebar.header("🌡️ Markör & Prob Ayarları")
+# --- SIDEBAR SETTINGS ---
+st.sidebar.header("🌡️ Marker & Probe Settings")
 with st.sidebar.form("settings_form"):
-    vcf_file = st.file_uploader("1. VCF Dosyası (.vcf)", type=['vcf'])
-    fasta_file = st.file_uploader("2. Referans Genom (.fasta, .fa, .gz)", type=['fasta', 'fa', 'fna', 'gz'])
+    vcf_file = st.file_uploader("1. VCF File (.vcf)", type=['vcf'])
+    fasta_file = st.file_uploader("2. Reference Genome (.fasta, .fa, .gz)", type=['fasta', 'fa', 'fna', 'gz'])
     
-    flank_len = st.number_input("FASTA Okuma Penceresi (bp):", min_value=150, max_value=1000, value=250, step=50)
-    f_len = st.slider("Formatlı SNP Dizisi Uzunluğu (bp):", 21, 201, 51, step=10)
-    p_prod = st.slider("Hedef PCR Boyutu (bp):", 50, 600, (100, 300), step=10)
-    p_size = st.slider("İdeal Primer Uzunluğu (nt):", 15, 30, 20)
-    p_tm = st.slider("İdeal Erime Sıcaklığı (Tm °C):", 50.0, 72.0, 60.0, step=0.5)
-    tm_diff = st.number_input("Maksimum Tm Farkı (°C):", min_value=0.1, max_value=10.0, value=2.0, step=0.1)
-    p_gc = st.slider("GC Oranı Aralığı (%):", 20.0, 80.0, (40.0, 60.0))
-    run_btn = st.form_submit_button("🚀 Boru Hattını Çalıştır")
+    flank_len = st.number_input("FASTA Flank Window (bp):", min_value=150, max_value=1000, value=250, step=50)
+    f_len = st.slider("Formatted SNP Sequence Length (bp):", 21, 201, 51, step=10)
+    p_prod = st.slider("Target PCR Size (bp):", 50, 600, (100, 300), step=10)
+    p_size = st.slider("Ideal Primer Length (nt):", 15, 30, 20)
+    p_tm = st.slider("Ideal Melting Temp (Tm °C):", 50.0, 72.0, 60.0, step=0.5)
+    tm_diff = st.number_input("Max Tm Difference (°C):", min_value=0.1, max_value=10.0, value=2.0, step=0.1)
+    p_gc = st.slider("GC Content Range (%):", 20.0, 80.0, (40.0, 60.0))
+    run_btn = st.form_submit_button("🚀 Run Pipeline")
 
 if run_btn:
     if not vcf_file or not fasta_file:
-        st.error("Lütfen VCF ve FASTA dosyalarını yükleyin.")
+        st.error("Please upload both VCF and FASTA files.")
     else:
         df = parse_vcf(vcf_file)
         valid_bases = ['A', 'C', 'G', 'T']
@@ -337,7 +308,7 @@ if run_btn:
         df = df.drop_duplicates(subset=['CHROM', 'POS', 'REF', 'ALT']).reset_index(drop=True)
         
         if len(df) == 0: 
-            st.warning("Bu VCF dosyasında uygun Biallelik SNP bulunamadı!")
+            st.warning("No suitable Biallelic SNP found in this VCF file!")
         else:
             file_extension = ".fa.gz" if fasta_file.name.endswith(".gz") else ".fasta"
             with tempfile.NamedTemporaryFile(delete=False, suffix=".fasta") as tmp_fasta:
@@ -365,10 +336,10 @@ if run_btn:
                         
                         if actual_ref_base != ref.upper():
                             results.append({
-                                'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Başlığı': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
-                                'Forward_Primer': "REF Uyuşmazlığı", 'Reverse_Primer': "-", 'PCR_Boyutu_bp': 0,
-                                'TaqMan_Prob_REF': "-", 'TaqMan_Prob_ALT': "-", 'Formatlı_SNP_[REF/ALT]': "-",
-                                'Uyumlu_Enzim_Sayısı': 0, 'Kullanılan_Enzim_Listesi': [], 'CAPS_Kesim_Profili': f"HATA: VCF REF ({ref}) != FASTA ({actual_ref_base})"
+                                'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
+                                'Forward_Primer': "REF Mismatch", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
+                                'TaqMan_Probe_REF': "-", 'TaqMan_Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
+                                'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 'CAPS_Restriction_Profile': f"ERROR: VCF REF ({ref}) != FASTA ({actual_ref_base})"
                             })
                             continue
 
@@ -380,17 +351,17 @@ if run_btn:
                         )
                         all_enzymes.extend(enz_l)
                         results.append({
-                            'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Başlığı': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
-                            'Forward_Primer': f_seq, 'Reverse_Primer': r_seq, 'PCR_Boyutu_bp': p_size_val,
-                            'TaqMan_Prob_REF': p_ref, 'TaqMan_Prob_ALT': p_alt, 'Formatlı_SNP_[REF/ALT]': form_snp,
-                            'Uyumlu_Enzim_Sayısı': enz_c, 'Kullanılan_Enzim_Listesi': enz_l, 'CAPS_Kesim_Profili': c_prof
+                            'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
+                            'Forward_Primer': f_seq, 'Reverse_Primer': r_seq, 'PCR_Size_bp': p_size_val,
+                            'TaqMan_Probe_REF': p_ref, 'TaqMan_Probe_ALT': p_alt, 'Formatted_SNP_[REF/ALT]': form_snp,
+                            'Compatible_Enzyme_Count': enz_c, 'Used_Enzyme_List': enz_l, 'CAPS_Restriction_Profile': c_prof
                         })
                     else:
                         results.append({
-                            'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Başlığı': "-", 'POS': pos, 'REF': ref, 'ALT': alt,
-                            'Forward_Primer': "FASTA'da Bulunamadı", 'Reverse_Primer': "-", 'PCR_Boyutu_bp': 0,
-                            'TaqMan_Prob_REF': "-", 'TaqMan_Prob_ALT': "-", 'Formatlı_SNP_[REF/ALT]': "-",
-                            'Uyumlu_Enzim_Sayısı': 0, 'Kullanılan_Enzim_Listesi': [], 'CAPS_Kesim_Profili': f"VCF '{chrom}' FASTA ile eşleşmedi"
+                            'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': "-", 'POS': pos, 'REF': ref, 'ALT': alt,
+                            'Forward_Primer': "Not Found in FASTA", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
+                            'TaqMan_Probe_REF': "-", 'TaqMan_Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
+                            'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 'CAPS_Restriction_Profile': f"VCF '{chrom}' did not match FASTA"
                         })
                     
                     if i % 10 == 0 or i == len(df) - 1: progress_bar.progress(min((i + 1) / len(df), 1.0))
@@ -399,83 +370,83 @@ if run_btn:
                 st.session_state['all_enzymes'] = all_enzymes
                 
             except Exception as e:
-                st.error(f"İşlem sırasında hata oluştu: {str(e)}")
+                st.error(f"An error occurred during processing: {str(e)}")
             finally:
                 fasta_obj.close()
                 os.remove(fasta_path)
                 if os.path.exists(fasta_path + ".fai"): os.remove(fasta_path + ".fai")
 
-# --- DASHBOARD ARAYÜZÜ ---
+# --- DASHBOARD UI ---
 if 'result_df' in st.session_state:
     res_df = st.session_state['result_df']
     all_enz = st.session_state['all_enzymes']
     
-    st.markdown("## 📊 1. Genom İstatistikleri")
+    st.markdown("## 📊 1. Genome Statistics")
     total_snp = len(res_df)
-    mapped_snp = len(res_df[res_df['FASTA_Başlığı'] != "-"])
-    primer_success = len(res_df[(res_df['Forward_Primer'] != "Primer Bulunamadı") & (res_df['Forward_Primer'] != "FASTA'da Bulunamadı") & (res_df['Forward_Primer'] != "REF Uyuşmazlığı")])
-    caps_success = len(res_df[res_df['Uyumlu_Enzim_Sayısı'] > 0])
+    mapped_snp = len(res_df[res_df['FASTA_Header'] != "-"])
+    primer_success = len(res_df[(res_df['Forward_Primer'] != "Primer Not Found") & (res_df['Forward_Primer'] != "Not Found in FASTA") & (res_df['Forward_Primer'] != "REF Mismatch")])
+    caps_success = len(res_df[res_df['Compatible_Enzyme_Count'] > 0])
     
     m1, m2, m3, m4 = st.columns(4)
-    m1.markdown(f"<div class='metric-box'><div class='metric-value'>{total_snp}</div><div class='metric-label'>İşlenen VCF SNP</div></div>", unsafe_allow_html=True)
-    m2.markdown(f"<div class='metric-box'><div class='metric-value'>{mapped_snp}</div><div class='metric-label'>Genomda Eşleşen</div></div>", unsafe_allow_html=True)
-    m3.markdown(f"<div class='metric-box'><div class='metric-value'>{primer_success}</div><div class='metric-label'>Başarılı Primer</div></div>", unsafe_allow_html=True)
-    m4.markdown(f"<div class='metric-box'><div class='metric-value'>{caps_success}</div><div class='metric-label'>CAPS Dönüşümü</div></div>", unsafe_allow_html=True)
+    m1.markdown(f"<div class='metric-box'><div class='metric-value'>{total_snp}</div><div class='metric-label'>Processed VCF SNPs</div></div>", unsafe_allow_html=True)
+    m2.markdown(f"<div class='metric-box'><div class='metric-value'>{mapped_snp}</div><div class='metric-label'>Matched in Genome</div></div>", unsafe_allow_html=True)
+    m3.markdown(f"<div class='metric-box'><div class='metric-value'>{primer_success}</div><div class='metric-label'>Successful Primers</div></div>", unsafe_allow_html=True)
+    m4.markdown(f"<div class='metric-box'><div class='metric-value'>{caps_success}</div><div class='metric-label'>CAPS Conversions</div></div>", unsafe_allow_html=True)
     
     unique_enzymes = list(set(all_enz))
-    st.info(f"🧬 **Enzim Tarama Özeti:** Toplam **{len(unique_enzymes)} farklı restriksiyon enzimi** genom genelinde polimorfik kesim noktası yakaladı.")
+    st.info(f"🧬 **Enzyme Screening Summary:** A total of **{len(unique_enzymes)} different restriction enzymes** produced polymorphic cuts across the genome.")
     
     st.divider()
     
-    st.markdown("## 🌍 2. Kromozom Üzerinde Fiziksel Dağılım")
+    st.markdown("## 🌍 2. Chromosome Physical Map")
     col_map_sel, col_map_plot = st.columns([1, 4])
     with col_map_sel:
-        st.markdown("Enzim dağılımını filtreleyin:")
-        map_enz_list = ["Tüm Başarılı Enzimler"] + sorted(unique_enzymes)
-        selected_map_enz = st.selectbox("Harita Filtresi:", map_enz_list)
+        st.markdown("Filter enzyme distribution:")
+        map_enz_list = ["All Successful Enzymes"] + sorted(unique_enzymes)
+        selected_map_enz = st.selectbox("Map Filter:", map_enz_list)
     with col_map_plot:
         fig_map = plot_physical_map(res_df, selected_map_enz)
         st.pyplot(fig_map)
         
     st.divider()
     
-    st.markdown("## 🖥️ 3. Jel Elektroforez Simülasyonu")
-    gel_candidates = res_df[res_df['Uyumlu_Enzim_Sayısı'] > 0]
+    st.markdown("## 🖥️ 3. Gel Electrophoresis Simulation")
+    gel_candidates = res_df[res_df['Compatible_Enzyme_Count'] > 0]
     
     if gel_candidates.empty:
-        st.warning("Jel simülasyonu için uygun polimorfik kesim profili bulunamadı.")
+        st.warning("No suitable polymorphic cut profile found for gel simulation.")
     else:
         col_gel1, col_gel2 = st.columns([1, 2])
         with col_gel1:
-            selected_snp_id = st.selectbox("Görüntülenecek SNP'yi Seçin:", gel_candidates['SNP_ID'].tolist())
+            selected_snp_id = st.selectbox("Select SNP to Visualize:", gel_candidates['SNP_ID'].tolist())
             snp_data = gel_candidates[gel_candidates['SNP_ID'] == selected_snp_id].iloc[0]
             
             ref_allele = snp_data['REF']
             alt_allele = snp_data['ALT']
-            pcr_size = snp_data['PCR_Boyutu_bp']
-            enz_list = snp_data['Kullanılan_Enzim_Listesi']
-            profile_str = snp_data['CAPS_Kesim_Profili']
+            pcr_size = snp_data['PCR_Size_bp']
+            enz_list = snp_data['Used_Enzyme_List']
+            profile_str = snp_data['CAPS_Restriction_Profile']
             
-            selected_snp_enz = st.selectbox("Kullanılacak Enzimi Seçin:", enz_list)
+            selected_snp_enz = st.selectbox("Select Enzyme to Use:", enz_list)
             
             frag_dict = parse_profile_for_gel(profile_str, selected_snp_enz, ref_allele, alt_allele, pcr_size)
             
             st.info(f"**SNP ID:** {selected_snp_id}\n\n"
-                    f"**PCR Ürünü:** {pcr_size} bp\n\n"
-                    f"**Allel 1 ({ref_allele}):** {frag_dict.get(ref_allele, [pcr_size])} bp\n\n"
-                    f"**Allel 2 ({alt_allele}):** {frag_dict.get(alt_allele, [pcr_size])} bp")
+                    f"**PCR Product:** {pcr_size} bp\n\n"
+                    f"**Allele 1 ({ref_allele}):** {frag_dict.get(ref_allele, [pcr_size])} bp\n\n"
+                    f"**Allele 2 ({alt_allele}):** {frag_dict.get(alt_allele, [pcr_size])} bp")
                     
         with col_gel2:
             fig_gel = render_gel_simulator(frag_dict, ref_allele, alt_allele, pcr_size, selected_snp_enz)
             st.pyplot(fig_gel)
 
     st.divider()
-    st.markdown("## 💾 4. Veri Dışa Aktarımı")
-    st.dataframe(res_df.drop(columns=['Kullanılan_Enzim_Listesi']))
+    st.markdown("## 💾 4. Data Export")
+    st.dataframe(res_df.drop(columns=['Used_Enzyme_List']))
     
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         export_df = res_df.copy()
-        export_df['Kullanılan_Enzim_Listesi'] = export_df['Kullanılan_Enzim_Listesi'].apply(lambda x: ", ".join(x))
-        export_df.to_excel(writer, sheet_name='GBS2CAPS_Rapor', index=False)
-    st.download_button("📂 Detaylı Raporu Excel Olarak İndir", output.getvalue(), "GBS2CAPS_Tasarimlar.xlsx")
+        export_df['Used_Enzyme_List'] = export_df['Used_Enzyme_List'].apply(lambda x: ", ".join(x))
+        export_df.to_excel(writer, sheet_name='Marker_Designs', index=False)
+    st.download_button("📂 Download Detailed Report as Excel", output.getvalue(), "GBS2CAPS_Analysis_Report.xlsx")
