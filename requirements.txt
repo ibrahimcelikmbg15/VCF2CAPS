@@ -1,0 +1,7 @@
+streamlit
+pandas
+biopython
+pyfaidx
+matplotlib
+xlsxwriter
+primer3-py
