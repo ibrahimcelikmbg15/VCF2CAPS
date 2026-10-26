@@ -6,6 +6,7 @@ import tempfile
 import os
 import shutil
 import gzip
+import re
 from pyfaidx import Fasta
 from Bio.Seq import Seq
 from Bio import Restriction
@@ -116,6 +117,9 @@ def design_marker_pure_python(left_flank, ref, alt, right_flank, snp_id, p_size,
         amplicon_ref = left_flank[best_left:] + ref + right_flank[:best_right]
         amplicon_alt = left_flank[best_left:] + alt + right_flank[:best_right]
         
+        amplicon_ref = re.sub(r'[^ACGTURYSWKMBDHVN]', 'N', amplicon_ref.upper())
+        amplicon_alt = re.sub(r'[^ACGTURYSWKMBDHVN]', 'N', amplicon_alt.upper())
+        
         snp_amp_pos = len(left_flank) - best_left
         probe_start, probe_end = max(0, snp_amp_pos - 10), min(len(amplicon_ref), snp_amp_pos + 11)
         
@@ -128,7 +132,7 @@ def plot_physical_map(df, map_type, top_enzymes=None):
     fig, ax = plt.subplots(figsize=(12, min(8, len(df['CHROM'].unique()) * 0.8)))
     
     if map_type == "Successful PCR and Enzymes Only":
-        plot_df = df[(df['Forward_Primer'] != "Primer Not Found") & (df['Forward_Primer'] != "Not Found in FASTA") & (df['Compatible_Enzyme_Count'] > 0)]
+        plot_df = df[(df['Forward_Primer'] != "Primer Not Found") & (df['Forward_Primer'] != "Not Found in FASTA") & (df['Forward_Primer'] != "REF Mismatch") & (df['Compatible_Enzyme_Count'] > 0)]
     elif map_type == "Top 3 Most Frequent Enzymes" and top_enzymes:
         top_3 = [e[0] for e in top_enzymes[:3]]
         plot_df = df[df['Used_Enzyme_List'].apply(lambda x: any(e in x for e in top_3))]
@@ -182,9 +186,13 @@ def main():
     if vcf_file and fasta_file:
         if st.button("🚀 Design Markers and Generate Report"):
             df = parse_vcf(vcf_file)
-            df = df[~df['ALT'].str.contains(',', na=False)].drop_duplicates(subset=['CHROM', 'POS', 'REF', 'ALT']).reset_index(drop=True)
+            df = df[~df['ALT'].str.contains(',', na=False)]
             
-            if len(df) == 0: return st.warning("No suitable Biallelic SNP found in this VCF file!")
+            valid_bases = ['A', 'C', 'G', 'T']
+            df = df[df['REF'].isin(valid_bases) & df['ALT'].isin(valid_bases)]
+            df = df.drop_duplicates(subset=['CHROM', 'POS', 'REF', 'ALT']).reset_index(drop=True)
+            
+            if len(df) == 0: return st.warning("No suitable Biallelic SNP (A, C, G, T) found in this VCF file!")
             
             file_extension = ".fa.gz" if fasta_file.name.endswith(".gz") else ".fasta"
             with tempfile.NamedTemporaryFile(delete=False, suffix=".fasta") as tmp_fasta:
@@ -210,6 +218,18 @@ def main():
                 
                 if actual_chrom:
                     pos_0 = pos - 1
+                    actual_ref_base = str(fasta_obj[actual_chrom][pos_0 : pos_0 + len(ref)].seq).upper()
+                    
+                    # Güvenlik Kontrolü: FASTA ve VCF Referans Uyuşmazlığı
+                    if actual_ref_base != ref.upper():
+                        results.append({
+                            'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
+                            'Forward_Primer': "REF Mismatch", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
+                            'TaqMan_Probe_REF': "-", 'TaqMan_Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
+                            'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 'CAPS_Restriction_Profile': f"ERROR: VCF REF ({ref}) vs FASTA ({actual_ref_base})"
+                        })
+                        continue
+
                     left_flank = str(fasta_obj[actual_chrom][max(0, pos_0 - flank_len):pos_0].seq).upper()
                     right_flank = str(fasta_obj[actual_chrom][pos_0 + len(ref):pos_0 + len(ref) + flank_len].seq).upper()
                     
@@ -244,12 +264,12 @@ def main():
             
             total_snp = len(result_df)
             mapped_snp = len(result_df[result_df['FASTA_Header'] != "-"])
-            primer_success = len(result_df[(result_df['Forward_Primer'] != "Primer Not Found") & (result_df['Forward_Primer'] != "Not Found in FASTA")])
+            primer_success = len(result_df[(result_df['Forward_Primer'] != "Primer Not Found") & (result_df['Forward_Primer'] != "Not Found in FASTA") & (result_df['Forward_Primer'] != "REF Mismatch")])
             caps_success = len(result_df[result_df['Compatible_Enzyme_Count'] > 0])
             multi_enz = len(result_df[result_df['Compatible_Enzyme_Count'] > 1])
             
             col_a, col_b, col_c, col_d = st.columns(4)
-            col_a.metric("Total VCF SNPs (Biallelic)", total_snp)
+            col_a.metric("Total Valid VCF SNPs", total_snp)
             col_b.metric("FASTA Matched & Probe Designed", mapped_snp)
             col_c.metric("Successful PCR Primers", primer_success)
             col_d.metric("SNPs with CAPS Enzyme", caps_success)
