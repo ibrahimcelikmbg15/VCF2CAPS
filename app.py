@@ -41,18 +41,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-col_logo, col_title = st.columns([1, 4])
-with col_logo:
-    logo_url = "https://raw.githubusercontent.com/ibrahimcelikmbg15/-SNP-Spesifik-CAPS-Mark-r-Tasarlay-c-/main/genom.jpeg"
-    try:
-        st.image(logo_url, use_container_width=True)
-    except:
-        st.markdown("🧬")
-
-with col_title:
-    st.markdown("<h1>🧬 GBS2CAPS: TaqMan & CAPS Marker Designer</h1>", unsafe_allow_html=True)
-    st.markdown("### **Genom Okulu** | Bioinformatics and Molecular Breeding Platform")
-    st.markdown("<div class='credit-text'>System Architect & Lead Developer: Assoc. Prof. Dr. Ibrahim Celik</div>", unsafe_allow_html=True)
+st.markdown("<h1>🧬 GBS2CAPS: Advanced CAPS Marker Designer</h1>", unsafe_allow_html=True)
+st.markdown("### Bioinformatics and Molecular Breeding Platform")
+st.markdown("<div class='credit-text'>System Architect & Lead Developer: Assoc. Prof. Dr. Ibrahim Celik</div>", unsafe_allow_html=True)
 st.divider()
 
 def parse_vcf(file_obj):
@@ -129,7 +120,6 @@ def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
         'SEQUENCE_TARGET': [target_pos, len(ref)]
     }
     
-    # EXACT PRIMER3WEB ARGUMENT MAPPING
     primer_opt = {
         'PRIMER_OPT_SIZE': p_args['size_opt'],
         'PRIMER_MIN_SIZE': p_args['size_min'],
@@ -313,38 +303,38 @@ with st.sidebar.form("settings_form"):
     vcf_file = st.file_uploader("1. VCF File (.vcf)", type=['vcf'])
     fasta_file = st.file_uploader("2. Reference Genome (.fasta, .fa, .gz)", type=['fasta', 'fa', 'fna', 'gz'])
     
-    st.markdown("### 🌡️ Basic Parameters")
+    st.markdown("### 🌡️ General PCR Settings")
     flank_len = st.number_input("FASTA Flank Window (bp):", min_value=150, max_value=1000, value=250, step=50)
     f_len = st.slider("Formatted SNP Length (bp):", 21, 201, 51, step=10)
     
     st.markdown("**Product Size Range (bp)**")
     col_p1, col_p2 = st.columns(2)
-    prod_min = col_p1.number_input("Min", value=100, step=10)
-    prod_max = col_p2.number_input("Max", value=300, step=10)
+    prod_min = col_p1.number_input("Min", value=100, step=10, key='prmin')
+    prod_max = col_p2.number_input("Max", value=300, step=10, key='prmax')
+
+    st.markdown("**Primer Size (nt)**")
+    col_s1, col_s2, col_s3 = st.columns(3)
+    p_s_min = col_s1.number_input("Min", value=18, key='psmin')
+    p_s_opt = col_s2.number_input("Opt", value=20, key='psopt')
+    p_s_max = col_s3.number_input("Max", value=27, key='psmax')
+    
+    st.markdown("**Primer Tm (°C)**")
+    col_t1, col_t2, col_t3 = st.columns(3)
+    p_tm_min = col_t1.number_input("Min", value=57.0, step=0.5, key='ptmin')
+    p_tm_opt = col_t2.number_input("Opt", value=60.0, step=0.5, key='ptopt')
+    p_tm_max = col_t3.number_input("Max", value=63.0, step=0.5, key='ptmax')
+    tm_diff = st.number_input("Max Tm Difference (°C):", value=2.0, step=0.1)
+    
+    st.markdown("**Primer GC (%)**")
+    col_g1, col_g2, col_g3 = st.columns(3)
+    p_gc_min = col_g1.number_input("Min", value=20.0, step=1.0, key='pgmin')
+    p_gc_opt = col_g2.number_input("Opt", value=50.0, step=1.0, key='pgopt')
+    p_gc_max = col_g3.number_input("Max", value=80.0, step=1.0, key='pgmax')
 
     with st.expander("⚙️ Advanced Primer3 Settings", expanded=False):
-        adv_tabs = st.tabs(["General", "Thermodynamics & Salt", "Sequence Penalties", "Internal Oligo (Probe)"])
+        adv_tabs = st.tabs(["Thermodynamics & Salt", "Sequence Penalties", "Internal Oligo (Probe)"])
         
         with adv_tabs[0]:
-            st.markdown("**Primer Size (nt)**")
-            c1, c2, c3 = st.columns(3)
-            p_s_min = c1.number_input("Min##s", value=18)
-            p_s_opt = c2.number_input("Opt##s", value=20)
-            p_s_max = c3.number_input("Max##s", value=27)
-            
-            st.markdown("**Primer Tm (°C)**")
-            c1, c2, c3 = st.columns(3)
-            p_tm_min = c1.number_input("Min##t", value=57.0, step=0.5)
-            p_tm_opt = c2.number_input("Opt##t", value=60.0, step=0.5)
-            p_tm_max = c3.number_input("Max##t", value=63.0, step=0.5)
-            
-            st.markdown("**Primer GC (%)**")
-            c1, c2, c3 = st.columns(3)
-            p_gc_min = c1.number_input("Min##g", value=20.0, step=1.0)
-            p_gc_opt = c2.number_input("Opt##g", value=50.0, step=1.0)
-            p_gc_max = c3.number_input("Max##g", value=80.0, step=1.0)
-            
-        with adv_tabs[1]:
             st.markdown("**Salt Concentrations (mM)**")
             salt_mono = st.number_input("Monovalent Cations", value=50.0)
             salt_div = st.number_input("Divalent Cations", value=1.5)
@@ -356,239 +346,10 @@ with st.sidebar.form("settings_form"):
             max_self_end = st.number_input("Max 3' Self Comp.", value=35.0)
             max_hairpin = st.number_input("Max Primer Hairpin", value=24.0)
 
-        with adv_tabs[2]:
+        with adv_tabs[1]:
             max_ns = st.number_input("Max #N's accepted", value=0, step=1)
             max_poly_x = st.number_input("Max Poly-X", value=5, step=1)
             cg_clamp = st.number_input("CG Clamp", value=0, step=1)
             max_gc_3end = st.number_input("Max GC in 3' end", value=5, step=1)
             
-        with adv_tabs[3]:
-            st.markdown("**Internal Oligo Size (nt)**")
-            c1, c2, c3 = st.columns(3)
-            io_s_min = c1.number_input("Min##is", value=18)
-            io_s_opt = c2.number_input("Opt##is", value=20)
-            io_s_max = c3.number_input("Max##is", value=27)
-            
-            st.markdown("**Internal Oligo Tm (°C)**")
-            c1, c2, c3 = st.columns(3)
-            io_t_min = c1.number_input("Min##it", value=57.0)
-            io_t_opt = c2.number_input("Opt##it", value=60.0)
-            io_t_max = c3.number_input("Max##it", value=63.0)
-            
-            st.markdown("**Internal Oligo GC (%)**")
-            c1, c2, c3 = st.columns(3)
-            io_g_min = c1.number_input("Min##ig", value=20.0)
-            io_g_opt = c2.number_input("Opt##ig", value=50.0)
-            io_g_max = c3.number_input("Max##ig", value=80.0)
-
-    primer3_args = {
-        'prod_size': [prod_min, prod_max],
-        'size_min': p_s_min, 'size_opt': p_s_opt, 'size_max': p_s_max,
-        'tm_min': p_tm_min, 'tm_opt': p_tm_opt, 'tm_max': p_tm_max,
-        'gc_min': p_gc_min, 'gc_opt': p_gc_opt, 'gc_max': p_gc_max,
-        'salt_mono': salt_mono, 'salt_div': salt_div, 'salt_dntp': salt_dntp, 'dna_conc': dna_conc,
-        'max_self_any': max_self_any, 'max_self_end': max_self_end, 'max_hairpin': max_hairpin,
-        'max_ns': max_ns, 'max_poly_x': max_poly_x, 'cg_clamp': cg_clamp, 'max_gc_3end': max_gc_3end,
-        'io_s_min': io_s_min, 'io_s_opt': io_s_opt, 'io_s_max': io_s_max,
-        'io_t_min': io_t_min, 'io_t_opt': io_t_opt, 'io_t_max': io_t_max,
-        'io_g_min': io_g_min, 'io_g_opt': io_g_opt, 'io_g_max': io_g_max
-    }
-
-    run_btn = st.form_submit_button("🚀 Execute Pipeline")
-
-if run_btn:
-    if not vcf_file or not fasta_file:
-        st.error("Please upload both VCF and FASTA files.")
-    else:
-        df = parse_vcf(vcf_file)
-        valid_bases = ['A', 'C', 'G', 'T']
-        df = df[~df['ALT'].str.contains(',', na=False)]
-        df = df[df['REF'].isin(valid_bases) & df['ALT'].isin(valid_bases)]
-        df = df.drop_duplicates(subset=['CHROM', 'POS', 'REF', 'ALT']).reset_index(drop=True)
-        
-        if len(df) == 0: 
-            st.warning("No suitable Biallelic SNP found in this VCF file!")
-        else:
-            file_extension = ".fa.gz" if fasta_file.name.endswith(".gz") else ".fasta"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".fasta") as tmp_fasta:
-                if fasta_file.name.endswith(".gz"):
-                    with gzip.open(fasta_file, 'rb') as f_in:
-                        shutil.copyfileobj(f_in, tmp_fasta)
-                else:
-                    shutil.copyfileobj(fasta_file, tmp_fasta)
-                fasta_path = tmp_fasta.name
-            
-            try:
-                fasta_obj = Fasta(fasta_path)
-                fasta_keys = list(fasta_obj.keys())
-                
-                results, all_enzymes = [], []
-                chrom_lengths = {}
-                progress_bar = st.progress(0)
-                
-                for i, row in df.iterrows():
-                    chrom, pos, ref, alt, snp_id = str(row['CHROM']), int(row['POS']), str(row['REF']), str(row['ALT']), str(row['ID'])
-                    actual_chrom = find_fasta_chrom(chrom, fasta_keys)
-                    
-                    if actual_chrom:
-                        if actual_chrom not in chrom_lengths:
-                            chrom_lengths[actual_chrom] = len(fasta_obj[actual_chrom])
-                            
-                        pos_0 = pos - 1
-                        actual_ref_base = str(fasta_obj[actual_chrom][pos_0 : pos_0 + len(ref)].seq).upper()
-                        
-                        if actual_ref_base != ref.upper():
-                            results.append({
-                                'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
-                                'Forward_Primer': "REF Mismatch", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
-                                'TaqMan_Probe_REF': "-", 'TaqMan_Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
-                                'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
-                                'CAPS_Restriction_Profile': f"ERROR: VCF REF ({ref}) != FASTA ({actual_ref_base})"
-                            })
-                            continue
-
-                        left_flank = str(fasta_obj[actual_chrom][max(0, pos_0 - flank_len):pos_0].seq).upper()
-                        right_flank = str(fasta_obj[actual_chrom][pos_0 + len(ref):pos_0 + len(ref) + flank_len].seq).upper()
-                        
-                        f_seq, r_seq, f_tm, r_tm, p_size_val, p_ref, p_alt, form_snp, c_prof, enz_c, enz_l = design_marker(
-                            left_flank, ref, alt, right_flank, snp_id, primer3_args, f_len
-                        )
-                        
-                        all_enzymes.extend(enz_l)
-                        results.append({
-                            'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
-                            'Forward_Primer': f_seq, 'Reverse_Primer': r_seq, 'PCR_Size_bp': p_size_val,
-                            'TaqMan_Probe_REF': p_ref, 'TaqMan_Probe_ALT': p_alt, 'Formatted_SNP_[REF/ALT]': form_snp,
-                            'Compatible_Enzyme_Count': enz_c, 'Used_Enzyme_List': enz_l, 'CAPS_Restriction_Profile': c_prof
-                        })
-                    else:
-                        results.append({
-                            'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': "-", 'POS': pos, 'REF': ref, 'ALT': alt,
-                            'Forward_Primer': "Not Found in FASTA", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
-                            'TaqMan_Probe_REF': "-", 'TaqMan_Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
-                            'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
-                            'CAPS_Restriction_Profile': f"VCF '{chrom}' did not match FASTA"
-                        })
-                    
-                    if i % 10 == 0 or i == len(df) - 1: progress_bar.progress(min((i + 1) / len(df), 1.0))
-                
-                st.session_state['result_df'] = pd.DataFrame(results)
-                st.session_state['all_enzymes'] = all_enzymes
-                st.session_state['chrom_lengths'] = chrom_lengths
-                
-            except Exception as e:
-                st.error(f"An error occurred during processing: {str(e)}")
-            finally:
-                fasta_obj.close()
-                os.remove(fasta_path)
-                if os.path.exists(fasta_path + ".fai"): os.remove(fasta_path + ".fai")
-
-# --- DASHBOARD UI ---
-if 'result_df' in st.session_state:
-    res_df = st.session_state['result_df']
-    all_enz = st.session_state['all_enzymes']
-    chrom_lengths = st.session_state['chrom_lengths']
-    
-    st.markdown("## 🔍 Targeted Analysis & Filtering")
-    c1, c2, c3, c4 = st.columns(4)
-    all_chroms = ["All"] + sorted(list(res_df['FASTA_Header'].unique()))
-    if "-" in all_chroms: all_chroms.remove("-")
-    
-    sel_chrom = c1.selectbox("Target Chromosome", all_chroms)
-    sel_start = c2.number_input("Region Start (bp)", value=0, min_value=0)
-    sel_end = c3.number_input("Region End (bp) (0 = All)", value=0, min_value=0)
-    
-    success_df = res_df[res_df['Compatible_Enzyme_Count'] > 0]
-    unique_enzymes = list(set(all_enz))
-    all_enz_opts = ["All Successful Enzymes"] + sorted(unique_enzymes)
-    sel_enz = c4.selectbox("Restriction Enzyme", all_enz_opts)
-    
-    filt_df = res_df.copy()
-    if sel_chrom != "All":
-        filt_df = filt_df[filt_df['FASTA_Header'] == sel_chrom]
-        if sel_end > 0:
-            filt_df = filt_df[(filt_df['POS'] >= sel_start) & (filt_df['POS'] <= sel_end)]
-    
-    if sel_enz != "All Successful Enzymes":
-        filt_df = filt_df[filt_df['Used_Enzyme_List'].apply(lambda x: sel_enz in x)]
-        
-    st.divider()
-
-    st.markdown("## 📊 1. Genome & Chromosome Statistics")
-    
-    total_snp = len(filt_df)
-    mapped_snp = len(filt_df[filt_df['FASTA_Header'] != "-"])
-    primer_success = len(filt_df[(filt_df['Forward_Primer'] != "Primer Not Found") & (filt_df['Forward_Primer'] != "Not Found in FASTA") & (filt_df['Forward_Primer'] != "REF Mismatch")])
-    caps_success = len(filt_df[filt_df['Compatible_Enzyme_Count'] > 0])
-    
-    m1, m2, m3, m4 = st.columns(4)
-    m1.markdown(f"<div class='metric-box'><div class='metric-value'>{total_snp}</div><div class='metric-label'>Filtered VCF SNPs</div></div>", unsafe_allow_html=True)
-    m2.markdown(f"<div class='metric-box'><div class='metric-value'>{mapped_snp}</div><div class='metric-label'>Genome Matched</div></div>", unsafe_allow_html=True)
-    m3.markdown(f"<div class='metric-box'><div class='metric-value'>{primer_success}</div><div class='metric-label'>Successful Primers</div></div>", unsafe_allow_html=True)
-    m4.markdown(f"<div class='metric-box'><div class='metric-value'>{caps_success}</div><div class='metric-label'>CAPS Convertible</div></div>", unsafe_allow_html=True)
-    
-    stats_list = []
-    total_genome_len = sum(chrom_lengths.values())
-    
-    for ch, length in chrom_lengths.items():
-        ch_df = res_df[(res_df['FASTA_Header'] == ch) & (res_df['Compatible_Enzyme_Count'] > 0)]
-        marker_count = len(ch_df)
-        resolution = round((length / 1000) / marker_count, 2) if marker_count > 0 else "N/A"
-        stats_list.append({"Chromosome": ch, "Length (Mb)": round(length/1_000_000, 2), "CAPS Markers": marker_count, "Resolution (kb/Marker)": resolution})
-    
-    total_markers = sum([s["CAPS Markers"] for s in stats_list])
-    global_res = round((total_genome_len / 1000) / total_markers, 2) if total_markers > 0 else "N/A"
-    stats_list.append({"Chromosome": "TOTAL GENOME", "Length (Mb)": round(total_genome_len/1_000_000, 2), "CAPS Markers": total_markers, "Resolution (kb/Marker)": global_res})
-    
-    st.table(pd.DataFrame(stats_list))
-    
-    st.divider()
-    
-    st.markdown("## 🌍 2. Physical Chromosome Map")
-    if caps_success > 0:
-        fig_map = plot_vertical_map(filt_df, chrom_lengths, sel_enz)
-        st.plotly_chart(fig_map, use_container_width=True)
-    else:
-        st.info("No successful CAPS markers found to map with current filters.")
-        
-    st.divider()
-    
-    st.markdown("## 🖥️ 3. Gel Electrophoresis Simulation")
-    gel_candidates = filt_df[filt_df['Compatible_Enzyme_Count'] > 0]
-    
-    if gel_candidates.empty:
-        st.warning("No suitable polymorphic cut profile found for gel simulation under current filters.")
-    else:
-        col_gel1, col_gel2 = st.columns([1, 2])
-        with col_gel1:
-            selected_snp_id = st.selectbox("Select SNP to Visualize:", gel_candidates['SNP_ID'].tolist())
-            snp_data = gel_candidates[gel_candidates['SNP_ID'] == selected_snp_id].iloc[0]
-            
-            ref_allele = snp_data['REF']
-            alt_allele = snp_data['ALT']
-            pcr_size = snp_data['PCR_Size_bp']
-            enz_list = snp_data['Used_Enzyme_List']
-            profile_str = snp_data['CAPS_Restriction_Profile']
-            
-            selected_snp_enz = st.selectbox("Select Target Enzyme:", enz_list)
-            frag_dict = parse_profile_for_gel(profile_str, selected_snp_enz, ref_allele, alt_allele, pcr_size)
-            
-            st.info(f"**Target SNP:** {selected_snp_id}\n\n"
-                    f"**PCR Amplicon Size:** {pcr_size} bp\n\n"
-                    f"**Allele 1 ({ref_allele}):** {frag_dict.get(ref_allele, [pcr_size])} bp\n\n"
-                    f"**Allele 2 ({alt_allele}):** {frag_dict.get(alt_allele, [pcr_size])} bp")
-                    
-        with col_gel2:
-            fig_gel = render_gel_simulator(frag_dict, ref_allele, alt_allele, pcr_size, selected_snp_enz)
-            st.pyplot(fig_gel)
-
-    st.divider()
-    st.markdown("## 💾 4. Export Filtered Data")
-    st.dataframe(filt_df.drop(columns=['Used_Enzyme_List']))
-    
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        export_df = filt_df.copy()
-        export_df['Used_Enzyme_List'] = export_df['Used_Enzyme_List'].apply(lambda x: ", ".join(x))
-        export_df.to_excel(writer, sheet_name='Filtered_Markers', index=False)
-    st.download_button("📂 Download Filtered Report as Excel", output.getvalue(), f"GBS2CAPS_{sel_chrom}_{sel_enz}.xlsx")
+        with adv_tabs
