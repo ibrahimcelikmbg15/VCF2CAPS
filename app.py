@@ -30,11 +30,29 @@ st.markdown("""
     }
     .metric-value { font-size: 2rem; font-weight: bold; color: #10b981; }
     .metric-label { font-size: 1rem; font-weight: 600; }
+    .credit-text {
+        font-size: 1.1rem;
+        color: #0ea5e9;
+        font-weight: 700;
+        border-left: 4px solid #0ea5e9;
+        padding-left: 15px;
+        margin-top: 5px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1>🧬 GBS2CAPS: Advanced CAPS Marker Designer</h1>", unsafe_allow_html=True)
-st.markdown("#### Automated Pipeline for High-Throughput GBS to CAPS Marker Conversion")
+col_logo, col_title = st.columns([1, 4])
+with col_logo:
+    logo_url = "https://raw.githubusercontent.com/ibrahimcelikmbg15/-SNP-Spesifik-CAPS-Mark-r-Tasarlay-c-/main/genom.jpeg"
+    try:
+        st.image(logo_url, use_container_width=True)
+    except:
+        st.markdown("🧬")
+
+with col_title:
+    st.markdown("<h1>🧬 GBS2CAPS: TaqMan & CAPS Marker Designer</h1>", unsafe_allow_html=True)
+    st.markdown("### **Genom Okulu** | Bioinformatics and Molecular Breeding Platform")
+    st.markdown("<div class='credit-text'>System Architect & Lead Developer: Assoc. Prof. Dr. Ibrahim Celik</div>", unsafe_allow_html=True)
 st.divider()
 
 def parse_vcf(file_obj):
@@ -81,8 +99,7 @@ def analyze_amplicon(amplicon_ref, amplicon_alt, ref, alt):
     seq_ref, seq_alt = Seq(str(amplicon_ref)), Seq(str(amplicon_alt))
     res_ref, res_alt = batch.search(seq_ref), batch.search(seq_alt)
     
-    profiles = []
-    enz_list = []
+    profiles, enz_list = [], []
     for enz in batch:
         c_ref, c_alt = res_ref.get(enz, []), res_alt.get(enz, [])
         if c_ref != c_alt:
@@ -112,6 +129,7 @@ def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
         'SEQUENCE_TARGET': [target_pos, len(ref)]
     }
     
+    # EXACT PRIMER3WEB ARGUMENT MAPPING
     primer_opt = {
         'PRIMER_OPT_SIZE': p_args['size_opt'],
         'PRIMER_MIN_SIZE': p_args['size_min'],
@@ -122,7 +140,30 @@ def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
         'PRIMER_MIN_GC': p_args['gc_min'],
         'PRIMER_OPT_GC_PERCENT': p_args['gc_opt'],
         'PRIMER_MAX_GC': p_args['gc_max'],
-        'PRIMER_PRODUCT_SIZE_RANGE': [list(p_args['prod_size'])]
+        'PRIMER_PRODUCT_SIZE_RANGE': [p_args['prod_size']],
+        
+        'PRIMER_SALT_MONOVALENT': p_args['salt_mono'],
+        'PRIMER_SALT_DIVALENT': p_args['salt_div'],
+        'PRIMER_DNTP_CONC': p_args['salt_dntp'],
+        'PRIMER_DNA_CONC': p_args['dna_conc'],
+        'PRIMER_MAX_SELF_ANY_TH': p_args['max_self_any'],
+        'PRIMER_MAX_SELF_END_TH': p_args['max_self_end'],
+        'PRIMER_MAX_HAIRPIN_TH': p_args['max_hairpin'],
+        'PRIMER_MAX_NS_ACCEPTED': p_args['max_ns'],
+        'PRIMER_MAX_POLY_X': p_args['max_poly_x'],
+        'PRIMER_CG_CLAMP': p_args['cg_clamp'],
+        'PRIMER_MAX_GC_IN_3END': p_args['max_gc_3end'],
+        
+        'PRIMER_PICK_INTERNAL_OLIGO': 1,
+        'PRIMER_INTERNAL_OPT_SIZE': p_args['io_s_opt'],
+        'PRIMER_INTERNAL_MIN_SIZE': p_args['io_s_min'],
+        'PRIMER_INTERNAL_MAX_SIZE': p_args['io_s_max'],
+        'PRIMER_INTERNAL_OPT_TM': p_args['io_t_opt'],
+        'PRIMER_INTERNAL_MIN_TM': p_args['io_t_min'],
+        'PRIMER_INTERNAL_MAX_TM': p_args['io_t_max'],
+        'PRIMER_INTERNAL_MIN_GC': p_args['io_g_min'],
+        'PRIMER_INTERNAL_OPT_GC_PERCENT': p_args['io_g_opt'],
+        'PRIMER_INTERNAL_MAX_GC': p_args['io_g_max']
     }
     
     try:
@@ -143,12 +184,17 @@ def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
             amplicon_ref = re.sub(r'[^ACGTURYSWKMBDHVN]', 'N', amplicon_ref.upper())
             amplicon_alt = re.sub(r'[^ACGTURYSWKMBDHVN]', 'N', amplicon_alt.upper())
             
+            snp_amp_pos = target_pos - left_pos
+            probe_start, probe_end = max(0, snp_amp_pos - 10), min(len(amplicon_ref), snp_amp_pos + 11)
+            p_ref = amplicon_ref[probe_start:probe_end]
+            p_alt = amplicon_alt[probe_start:probe_end]
+            
             c_prof, enz_c, enz_l = analyze_amplicon(amplicon_ref, amplicon_alt, ref, alt)
-            return f_seq, r_seq, f_tm_val, r_tm_val, pcr_size, formatli_snp, c_prof, enz_c, enz_l
-    except:
+            return f_seq, r_seq, f_tm_val, r_tm_val, pcr_size, p_ref, p_alt, formatli_snp, c_prof, enz_c, enz_l
+    except Exception as e:
         pass
         
-    return "Primer Not Found", "Primer Not Found", 0, 0, 0, formatli_snp, "No Suitable Amplicon", 0, []
+    return "Primer Not Found", "Primer Not Found", 0, 0, 0, "-", "-", formatli_snp, "No Suitable Amplicon", 0, []
 
 def plot_vertical_map(df, chrom_lengths, selected_enzyme):
     fig = go.Figure()
@@ -165,7 +211,6 @@ def plot_vertical_map(df, chrom_lengths, selected_enzyme):
         length_mb = chrom_lengths[chrom] / 1_000_000
         if length_mb > max_len_mb: max_len_mb = length_mb
         
-        # Chromosome backbone
         fig.add_trace(go.Scatter(
             x=[chrom, chrom], y=[0, length_mb], 
             mode='lines', line=dict(color='lightgray', width=8), 
@@ -261,44 +306,93 @@ def render_gel_simulator(frag_data, ref, alt, pcr_size, enzyme):
     ax.set_title(f"{enzyme} Restriction Profile", color='#10b981', fontweight='bold', fontsize=14, pad=20)
     return fig
 
+
 # --- SIDEBAR SETTINGS ---
 st.sidebar.header("📁 Data Input")
 with st.sidebar.form("settings_form"):
     vcf_file = st.file_uploader("1. VCF File (.vcf)", type=['vcf'])
     fasta_file = st.file_uploader("2. Reference Genome (.fasta, .fa, .gz)", type=['fasta', 'fa', 'fna', 'gz'])
     
-    st.markdown("### 🌡️ Target Parameters")
+    st.markdown("### 🌡️ Basic Parameters")
     flank_len = st.number_input("FASTA Flank Window (bp):", min_value=150, max_value=1000, value=250, step=50)
-    f_len = st.slider("Formatted SNP Sequence Length (bp):", 21, 201, 51, step=10)
+    f_len = st.slider("Formatted SNP Length (bp):", 21, 201, 51, step=10)
     
+    st.markdown("**Product Size Range (bp)**")
+    col_p1, col_p2 = st.columns(2)
+    prod_min = col_p1.number_input("Min", value=100, step=10)
+    prod_max = col_p2.number_input("Max", value=300, step=10)
+
     with st.expander("⚙️ Advanced Primer3 Settings", expanded=False):
-        p_prod = st.slider("Product Size Range (bp):", 50, 1000, (100, 300), step=10)
+        adv_tabs = st.tabs(["General", "Thermodynamics & Salt", "Sequence Penalties", "Internal Oligo (Probe)"])
         
-        st.markdown("**Primer Size (nt)**")
-        col_s1, col_s2, col_s3 = st.columns(3)
-        p_s_min = col_s1.number_input("Min", value=18)
-        p_s_opt = col_s2.number_input("Opt", value=20)
-        p_s_max = col_s3.number_input("Max", value=27)
-        
-        st.markdown("**Primer Tm (°C)**")
-        col_t1, col_t2, col_t3 = st.columns(3)
-        p_tm_min = col_t1.number_input("Min Tm", value=57.0)
-        p_tm_opt = col_t2.number_input("Opt Tm", value=60.0)
-        p_tm_max = col_t3.number_input("Max Tm", value=63.0)
-        tm_diff = st.number_input("Max Tm Difference (°C):", value=2.0, step=0.1)
-        
-        st.markdown("**Primer GC (%)**")
-        col_g1, col_g2, col_g3 = st.columns(3)
-        p_gc_min = col_g1.number_input("Min GC", value=20.0)
-        p_gc_opt = col_g2.number_input("Opt GC", value=50.0)
-        p_gc_max = col_g3.number_input("Max GC", value=80.0)
-        
-        primer3_args = {
-            'size_min': p_s_min, 'size_opt': p_s_opt, 'size_max': p_s_max,
-            'tm_min': p_tm_min, 'tm_opt': p_tm_opt, 'tm_max': p_tm_max,
-            'gc_min': p_gc_min, 'gc_opt': p_gc_opt, 'gc_max': p_gc_max,
-            'prod_size': p_prod
-        }
+        with adv_tabs[0]:
+            st.markdown("**Primer Size (nt)**")
+            c1, c2, c3 = st.columns(3)
+            p_s_min = c1.number_input("Min##s", value=18)
+            p_s_opt = c2.number_input("Opt##s", value=20)
+            p_s_max = c3.number_input("Max##s", value=27)
+            
+            st.markdown("**Primer Tm (°C)**")
+            c1, c2, c3 = st.columns(3)
+            p_tm_min = c1.number_input("Min##t", value=57.0, step=0.5)
+            p_tm_opt = c2.number_input("Opt##t", value=60.0, step=0.5)
+            p_tm_max = c3.number_input("Max##t", value=63.0, step=0.5)
+            
+            st.markdown("**Primer GC (%)**")
+            c1, c2, c3 = st.columns(3)
+            p_gc_min = c1.number_input("Min##g", value=20.0, step=1.0)
+            p_gc_opt = c2.number_input("Opt##g", value=50.0, step=1.0)
+            p_gc_max = c3.number_input("Max##g", value=80.0, step=1.0)
+            
+        with adv_tabs[1]:
+            st.markdown("**Salt Concentrations (mM)**")
+            salt_mono = st.number_input("Monovalent Cations", value=50.0)
+            salt_div = st.number_input("Divalent Cations", value=1.5)
+            salt_dntp = st.number_input("dNTPs", value=0.6)
+            dna_conc = st.number_input("Annealing Oligo (nM)", value=50.0)
+            
+            st.markdown("**Thermodynamic Alignments**")
+            max_self_any = st.number_input("Max Self Complementarity", value=45.0)
+            max_self_end = st.number_input("Max 3' Self Comp.", value=35.0)
+            max_hairpin = st.number_input("Max Primer Hairpin", value=24.0)
+
+        with adv_tabs[2]:
+            max_ns = st.number_input("Max #N's accepted", value=0, step=1)
+            max_poly_x = st.number_input("Max Poly-X", value=5, step=1)
+            cg_clamp = st.number_input("CG Clamp", value=0, step=1)
+            max_gc_3end = st.number_input("Max GC in 3' end", value=5, step=1)
+            
+        with adv_tabs[3]:
+            st.markdown("**Internal Oligo Size (nt)**")
+            c1, c2, c3 = st.columns(3)
+            io_s_min = c1.number_input("Min##is", value=18)
+            io_s_opt = c2.number_input("Opt##is", value=20)
+            io_s_max = c3.number_input("Max##is", value=27)
+            
+            st.markdown("**Internal Oligo Tm (°C)**")
+            c1, c2, c3 = st.columns(3)
+            io_t_min = c1.number_input("Min##it", value=57.0)
+            io_t_opt = c2.number_input("Opt##it", value=60.0)
+            io_t_max = c3.number_input("Max##it", value=63.0)
+            
+            st.markdown("**Internal Oligo GC (%)**")
+            c1, c2, c3 = st.columns(3)
+            io_g_min = c1.number_input("Min##ig", value=20.0)
+            io_g_opt = c2.number_input("Opt##ig", value=50.0)
+            io_g_max = c3.number_input("Max##ig", value=80.0)
+
+    primer3_args = {
+        'prod_size': [prod_min, prod_max],
+        'size_min': p_s_min, 'size_opt': p_s_opt, 'size_max': p_s_max,
+        'tm_min': p_tm_min, 'tm_opt': p_tm_opt, 'tm_max': p_tm_max,
+        'gc_min': p_gc_min, 'gc_opt': p_gc_opt, 'gc_max': p_gc_max,
+        'salt_mono': salt_mono, 'salt_div': salt_div, 'salt_dntp': salt_dntp, 'dna_conc': dna_conc,
+        'max_self_any': max_self_any, 'max_self_end': max_self_end, 'max_hairpin': max_hairpin,
+        'max_ns': max_ns, 'max_poly_x': max_poly_x, 'cg_clamp': cg_clamp, 'max_gc_3end': max_gc_3end,
+        'io_s_min': io_s_min, 'io_s_opt': io_s_opt, 'io_s_max': io_s_max,
+        'io_t_min': io_t_min, 'io_t_opt': io_t_opt, 'io_t_max': io_t_max,
+        'io_g_min': io_g_min, 'io_g_opt': io_g_opt, 'io_g_max': io_g_max
+    }
 
     run_btn = st.form_submit_button("🚀 Execute Pipeline")
 
@@ -347,7 +441,8 @@ if run_btn:
                             results.append({
                                 'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
                                 'Forward_Primer': "REF Mismatch", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
-                                'Formatted_SNP_[REF/ALT]': "-", 'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
+                                'TaqMan_Probe_REF': "-", 'TaqMan_Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
+                                'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
                                 'CAPS_Restriction_Profile': f"ERROR: VCF REF ({ref}) != FASTA ({actual_ref_base})"
                             })
                             continue
@@ -355,7 +450,7 @@ if run_btn:
                         left_flank = str(fasta_obj[actual_chrom][max(0, pos_0 - flank_len):pos_0].seq).upper()
                         right_flank = str(fasta_obj[actual_chrom][pos_0 + len(ref):pos_0 + len(ref) + flank_len].seq).upper()
                         
-                        f_seq, r_seq, f_tm, r_tm, p_size_val, form_snp, c_prof, enz_c, enz_l = design_marker(
+                        f_seq, r_seq, f_tm, r_tm, p_size_val, p_ref, p_alt, form_snp, c_prof, enz_c, enz_l = design_marker(
                             left_flank, ref, alt, right_flank, snp_id, primer3_args, f_len
                         )
                         
@@ -363,14 +458,15 @@ if run_btn:
                         results.append({
                             'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
                             'Forward_Primer': f_seq, 'Reverse_Primer': r_seq, 'PCR_Size_bp': p_size_val,
-                            'Formatted_SNP_[REF/ALT]': form_snp, 'Compatible_Enzyme_Count': enz_c, 
-                            'Used_Enzyme_List': enz_l, 'CAPS_Restriction_Profile': c_prof
+                            'TaqMan_Probe_REF': p_ref, 'TaqMan_Probe_ALT': p_alt, 'Formatted_SNP_[REF/ALT]': form_snp,
+                            'Compatible_Enzyme_Count': enz_c, 'Used_Enzyme_List': enz_l, 'CAPS_Restriction_Profile': c_prof
                         })
                     else:
                         results.append({
                             'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': "-", 'POS': pos, 'REF': ref, 'ALT': alt,
                             'Forward_Primer': "Not Found in FASTA", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
-                            'Formatted_SNP_[REF/ALT]': "-", 'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
+                            'TaqMan_Probe_REF': "-", 'TaqMan_Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
+                            'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
                             'CAPS_Restriction_Profile': f"VCF '{chrom}' did not match FASTA"
                         })
                     
