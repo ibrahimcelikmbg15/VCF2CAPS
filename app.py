@@ -46,39 +46,29 @@ st.markdown("### Standalone Bioinformatics Pipeline for Automated Marker Convers
 st.markdown("<div class='credit-text'>System Architect & Lead Developer: Assoc. Prof. Dr. Ibrahim Celik</div>", unsafe_allow_html=True)
 st.divider()
 
-GLOBAL_BATCH = Restriction.CommOnly
-
 def parse_vcf(file_obj):
-    raw_bytes = file_obj.getvalue()
-    text = raw_bytes.decode('utf-8', errors='replace')
-    lines = [line for line in text.splitlines() if not line.startswith('##')]
-    if not lines:
-        return pd.DataFrame()
-    df = pd.read_csv(io.StringIO('\n'.join(lines)), sep='\t')
+    lines = []
+    for line in io.TextIOWrapper(file_obj, encoding='utf-8', errors='replace'):
+        if line.startswith('##'): continue
+        lines.append(line)
+    df = pd.read_csv(io.StringIO(''.join(lines)), sep='\t')
     df.rename(columns={'#CHROM': 'CHROM'}, inplace=True)
     if 'ID' in df.columns:
-        mask = (df['ID'].astype(str) == '.') | df['ID'].isna()
-        df.loc[mask, 'ID'] = df.loc[mask, 'CHROM'].astype(str) + "_" + df.loc[mask, 'POS'].astype(str)
-    else:
-        df['ID'] = df['CHROM'].astype(str) + "_" + df['POS'].astype(str)
+        df['ID'] = df.apply(lambda row: f"{row['CHROM']}_{row['POS']}" if row['ID'] == '.' or pd.isna(row['ID']) else row['ID'], axis=1)
     return df
 
 def find_fasta_chrom(chrom, fasta_keys):
-    if chrom in fasta_keys:
-        return chrom
+    if chrom in fasta_keys: return chrom
     chrom_base = chrom.split('.')[0] if '.' in chrom else chrom
     for k in fasta_keys:
         k_base = k.split(' ')[0]
         k_base_no_ver = k_base.split('.')[0] if '.' in k_base else k_base
-        if chrom_base == k_base_no_ver:
-            return k
-        if chrom_base.lower().replace('chr', '') == k_base_no_ver.lower().replace('chr', ''):
-            return k
+        if chrom_base == k_base_no_ver: return k
+        if chrom_base.lower().replace('chr', '') == k_base_no_ver.lower().replace('chr', ''): return k
     return None
 
 def get_fragments(cut_positions, total_len):
-    if not cut_positions:
-        return f"{total_len}bp (No Cut)"
+    if not cut_positions: return f"{total_len}bp (No Cut)"
     frags, last_pos = [], 0
     for cut in sorted(cut_positions):
         frags.append(cut - last_pos)
@@ -87,8 +77,7 @@ def get_fragments(cut_positions, total_len):
     return " + ".join([f"{f}bp" for f in frags if f > 0])
 
 def get_frag_list(cuts, total):
-    if not cuts:
-        return [total]
+    if not cuts: return [total]
     f, last = [], 0
     for c in sorted(cuts):
         f.append(c - last)
@@ -97,19 +86,17 @@ def get_frag_list(cuts, total):
     return [x for x in f if x > 0]
 
 def analyze_amplicon(amplicon_ref, amplicon_alt, ref, alt):
+    batch = Restriction.CommOnly
     seq_ref, seq_alt = Seq(str(amplicon_ref)), Seq(str(amplicon_alt))
-    res_ref, res_alt = GLOBAL_BATCH.search(seq_ref), GLOBAL_BATCH.search(seq_alt)
+    res_ref, res_alt = batch.search(seq_ref), batch.search(seq_alt)
     
     profiles, enz_list = [], []
-    for enz in GLOBAL_BATCH:
+    for enz in batch:
         c_ref, c_alt = res_ref.get(enz, []), res_alt.get(enz, [])
         if c_ref != c_alt:
-            if len(c_ref) > 2 or len(c_alt) > 2:
-                continue
-            f_ref_list = get_frag_list(c_ref, len(amplicon_ref))
-            f_alt_list = get_frag_list(c_alt, len(amplicon_alt))
-            if any(x < 15 for x in f_ref_list) or any(x < 15 for x in f_alt_list):
-                continue
+            if len(c_ref) > 2 or len(c_alt) > 2: continue
+            f_ref_list, f_alt_list = get_frag_list(c_ref, len(amplicon_ref)), get_frag_list(c_alt, len(amplicon_alt))
+            if any(x < 15 for x in f_ref_list) or any(x < 15 for x in f_alt_list): continue
             
             frag_ref = get_fragments(c_ref, len(amplicon_ref))
             frag_alt = get_fragments(c_alt, len(amplicon_alt))
@@ -118,26 +105,10 @@ def analyze_amplicon(amplicon_ref, amplicon_alt, ref, alt):
             
     return " || ".join(profiles) if profiles else "No Suitable/Selective Enzyme Found", len(profiles), enz_list
 
-def has_polymorphic_site(left_flank, ref, alt, right_flank):
-    c_left = left_flank[-15:] if len(left_flank) >= 15 else left_flank
-    c_right = right_flank[:15] if len(right_flank) >= 15 else right_flank
-    s_ref = Seq(re.sub(r'[^ACGT]', 'N', (c_left + ref + c_right).upper()))
-    s_alt = Seq(re.sub(r'[^ACGT]', 'N', (c_left + alt + c_right).upper()))
-    
-    r_ref = GLOBAL_BATCH.search(s_ref)
-    r_alt = GLOBAL_BATCH.search(s_alt)
-    for enz in GLOBAL_BATCH:
-        if r_ref.get(enz, []) != r_alt.get(enz, []):
-            return True
-    return False
-
 def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
     half_f = f_len // 2
     c_left = left_flank[-half_f:] if len(left_flank) >= half_f else left_flank
     formatli_snp = f"{c_left}[{ref}/{alt}]{right_flank[:half_f]}"
-    
-    if not has_polymorphic_site(left_flank, ref, alt, right_flank):
-        return "No Restriction Site", "-", 0, 0, 0, "-", "-", formatli_snp, "No Suitable/Selective Enzyme Found", 0, []
     
     seq_ref = left_flank + ref + right_flank
     seq_alt = left_flank + alt + right_flank
@@ -160,6 +131,7 @@ def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
         'PRIMER_OPT_GC_PERCENT': p_args['gc_opt'],
         'PRIMER_MAX_GC': p_args['gc_max'],
         'PRIMER_PRODUCT_SIZE_RANGE': [p_args['prod_size']],
+        
         'PRIMER_SALT_MONOVALENT': p_args['salt_mono'],
         'PRIMER_SALT_DIVALENT': p_args['salt_div'],
         'PRIMER_DNTP_CONC': p_args['salt_dntp'],
@@ -171,7 +143,17 @@ def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
         'PRIMER_MAX_POLY_X': p_args['max_poly_x'],
         'PRIMER_CG_CLAMP': p_args['cg_clamp'],
         'PRIMER_MAX_GC_IN_3END': p_args['max_gc_3end'],
-        'PRIMER_PICK_INTERNAL_OLIGO': 0
+        
+        'PRIMER_PICK_INTERNAL_OLIGO': 1,
+        'PRIMER_INTERNAL_OPT_SIZE': p_args['io_s_opt'],
+        'PRIMER_INTERNAL_MIN_SIZE': p_args['io_s_min'],
+        'PRIMER_INTERNAL_MAX_SIZE': p_args['io_s_max'],
+        'PRIMER_INTERNAL_OPT_TM': p_args['io_t_opt'],
+        'PRIMER_INTERNAL_MIN_TM': p_args['io_t_min'],
+        'PRIMER_INTERNAL_MAX_TM': p_args['io_t_max'],
+        'PRIMER_INTERNAL_MIN_GC': p_args['io_g_min'],
+        'PRIMER_INTERNAL_OPT_GC_PERCENT': p_args['io_g_opt'],
+        'PRIMER_INTERNAL_MAX_GC': p_args['io_g_max']
     }
     
     try:
@@ -199,7 +181,7 @@ def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
             
             c_prof, enz_c, enz_l = analyze_amplicon(amplicon_ref, amplicon_alt, ref, alt)
             return f_seq, r_seq, f_tm_val, r_tm_val, pcr_size, p_ref, p_alt, formatli_snp, c_prof, enz_c, enz_l
-    except Exception:
+    except Exception as e:
         pass
         
     return "Primer Not Found", "Primer Not Found", 0, 0, 0, "-", "-", formatli_snp, "No Suitable Amplicon", 0, []
@@ -217,8 +199,7 @@ def plot_vertical_map(df, chrom_lengths, selected_enzyme):
     max_len_mb = 0
     for i, chrom in enumerate(valid_chroms):
         length_mb = chrom_lengths[chrom] / 1_000_000
-        if length_mb > max_len_mb:
-            max_len_mb = length_mb
+        if length_mb > max_len_mb: max_len_mb = length_mb
         
         fig.add_trace(go.Scatter(
             x=[chrom, chrom], y=[0, length_mb], 
@@ -261,8 +242,7 @@ def parse_profile_for_gel(profile_str, enzyme, ref, alt, pcr_size):
             target_prof = prof
             break
             
-    if not target_prof:
-        return frag_data
+    if not target_prof: return frag_data
     
     alleles_split = target_prof.split(" | ")
     for part in alleles_split:
@@ -410,130 +390,120 @@ if run_btn:
     if not vcf_file or not fasta_file:
         st.error("Please upload both VCF and FASTA files.")
     else:
-        # Streamlit'in kendi yerel durum bileşeni (Asla kaybolmaz ve anında görünür)
-        status_container = st.status("🚀 Pipeline is running... Please DO NOT close or refresh this tab.", expanded=True)
+        # Uyarı mesajı ve güvenli sayaç alanı
+        st.warning("⚠️ **Pipeline is running!** Depending on your VCF size, this may take a few minutes. **Please DO NOT close or refresh this tab.**")
         
-        with status_container:
-            progress_bar = st.progress(0)
-            status_text = st.empty()
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        start_time = time.time()
+        status_text.markdown("⚙️ **0% Completed** | ⏱️ **Elapsed Time:** 0 sec (Initializing...)")
+        
+        df = parse_vcf(vcf_file)
+        valid_bases = ['A', 'C', 'G', 'T']
+        df = df[~df['ALT'].str.contains(',', na=False)]
+        df = df[df['REF'].isin(valid_bases) & df['ALT'].isin(valid_bases)]
+        df = df.drop_duplicates(subset=['CHROM', 'POS', 'REF', 'ALT']).reset_index(drop=True)
+        
+        if len(df) == 0: 
+            st.warning("No suitable Biallelic SNP found in this VCF file!")
+        else:
+            file_extension = ".fa.gz" if fasta_file.name.endswith(".gz") else ".fasta"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".fasta") as tmp_fasta:
+                if fasta_file.name.endswith(".gz"):
+                    with gzip.open(fasta_file, 'rb') as f_in:
+                        shutil.copyfileobj(f_in, tmp_fasta)
+                else:
+                    shutil.copyfileobj(fasta_file, tmp_fasta)
+                fasta_path = tmp_fasta.name
             
-            start_time = time.time()
-            status_text.markdown("⚙️ **0% Completed** | ⏱️ **Elapsed Time:** 0 sec (Reading VCF file...)")
-            
-            df = parse_vcf(vcf_file)
-            valid_bases = ['A', 'C', 'G', 'T']
-            if not df.empty:
-                df = df[~df['ALT'].astype(str).str.contains(',', na=False)]
-                df = df[df['REF'].isin(valid_bases) & df['ALT'].isin(valid_bases)]
-                df = df.drop_duplicates(subset=['CHROM', 'POS', 'REF', 'ALT']).reset_index(drop=True)
-            
-            if len(df) == 0: 
-                status_container.update(label="❌ Error", state="error")
-                st.warning("No suitable Biallelic SNP found in this VCF file!")
-            else:
+            try:
+                fasta_obj = Fasta(fasta_path)
+                fasta_keys = list(fasta_obj.keys())
+                
+                results, all_enzymes = [], []
+                chrom_lengths = {}
+                total_snps = len(df)
+                batch_size = 100  # 100'erli güvenli paketler halinde işleme
+                
                 elapsed_secs = int(time.time() - start_time)
-                status_text.markdown(f"⚙️ **0% Completed** (0/{len(df)} SNPs) | ⏱️ **Elapsed Time:** {elapsed_secs} sec (Extracting Reference Genome...)")
+                status_text.markdown(f"⚙️ **0% Completed** (0/{total_snps} SNPs) | ⏱️ **Elapsed Time:** {elapsed_secs} sec")
                 
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".fasta") as tmp_fasta:
-                    if fasta_file.name.endswith(".gz"):
-                        with gzip.open(fasta_file, 'rb') as f_in:
-                            shutil.copyfileobj(f_in, tmp_fasta)
-                    else:
-                        shutil.copyfileobj(fasta_file, tmp_fasta)
-                    fasta_path = tmp_fasta.name
-                
-                fasta_obj = None
-                try:
-                    fasta_obj = Fasta(fasta_path)
-                    fasta_keys = list(fasta_obj.keys())
-                    chrom_map_cache = {}
+                for start_idx in range(0, total_snps, batch_size):
+                    end_idx = min(start_idx + batch_size, total_snps)
+                    batch_df = df.iloc[start_idx:end_idx]
                     
-                    results, all_enzymes = [], []
-                    chrom_lengths = {}
-                    total_snps = len(df)
-                    batch_size = 1000  # 1000'erli gruplar halinde işleme
-                    
-                    for start_idx in range(0, total_snps, batch_size):
-                        end_idx = min(start_idx + batch_size, total_snps)
-                        batch_df = df.iloc[start_idx:end_idx]
+                    for _, row in batch_df.iterrows():
+                        chrom, pos, ref, alt, snp_id = str(row['CHROM']), int(row['POS']), str(row['REF']), str(row['ALT']), str(row['ID'])
+                        actual_chrom = find_fasta_chrom(chrom, fasta_keys)
                         
-                        for _, row in batch_df.iterrows():
-                            chrom, pos, ref, alt, snp_id = str(row['CHROM']), int(row['POS']), str(row['REF']), str(row['ALT']), str(row['ID'])
+                        if actual_chrom:
+                            if actual_chrom not in chrom_lengths:
+                                chrom_lengths[actual_chrom] = len(fasta_obj[actual_chrom])
+                                
+                            pos_0 = pos - 1
+                            actual_ref_base = str(fasta_obj[actual_chrom][pos_0 : pos_0 + len(ref)].seq).upper()
                             
-                            if chrom not in chrom_map_cache:
-                                chrom_map_cache[chrom] = find_fasta_chrom(chrom, fasta_keys)
-                            actual_chrom = chrom_map_cache[chrom]
-                            
-                            if actual_chrom:
-                                if actual_chrom not in chrom_lengths:
-                                    chrom_lengths[actual_chrom] = len(fasta_obj[actual_chrom])
-                                    
-                                pos_0 = pos - 1
-                                actual_ref_base = str(fasta_obj[actual_chrom][pos_0 : pos_0 + len(ref)].seq).upper()
-                                
-                                if actual_ref_base != ref.upper():
-                                    results.append({
-                                        'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
-                                        'Forward_Primer': "REF Mismatch", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
-                                        'Probe_REF': "-", 'Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
-                                        'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
-                                        'CAPS_Restriction_Profile': f"ERROR: VCF REF ({ref}) != FASTA ({actual_ref_base})"
-                                    })
-                                    continue
-
-                                left_flank = str(fasta_obj[actual_chrom][max(0, pos_0 - flank_len):pos_0].seq).upper()
-                                right_flank = str(fasta_obj[actual_chrom][pos_0 + len(ref):pos_0 + len(ref) + flank_len].seq).upper()
-                                
-                                f_seq, r_seq, f_tm, r_tm, p_size_val, p_ref, p_alt, form_snp, c_prof, enz_c, enz_l = design_marker(
-                                    left_flank, ref, alt, right_flank, snp_id, primer3_args, f_len
-                                )
-                                
-                                all_enzymes.extend(enz_l)
+                            if actual_ref_base != ref.upper():
                                 results.append({
                                     'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
-                                    'Forward_Primer': f_seq, 'Reverse_Primer': r_seq, 'PCR_Size_bp': p_size_val,
-                                    'Probe_REF': p_ref, 'Probe_ALT': p_alt, 'Formatted_SNP_[REF/ALT]': form_snp,
-                                    'Compatible_Enzyme_Count': enz_c, 'Used_Enzyme_List': enz_l, 'CAPS_Restriction_Profile': c_prof
-                                })
-                            else:
-                                results.append({
-                                    'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': "-", 'POS': pos, 'REF': ref, 'ALT': alt,
-                                    'Forward_Primer': "Not Found in FASTA", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
+                                    'Forward_Primer': "REF Mismatch", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
                                     'Probe_REF': "-", 'Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
                                     'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
-                                    'CAPS_Restriction_Profile': f"VCF '{chrom}' did not match FASTA"
+                                    'CAPS_Restriction_Profile': f"ERROR: VCF REF ({ref}) != FASTA ({actual_ref_base})"
                                 })
-                        
-                        # HER 1000'LÜK BATCH SONUNDA EKRANI VE SÜREYİ GÜNCELLE
-                        processed_count = end_idx
-                        elapsed_secs = int(time.time() - start_time)
-                        mins, secs = divmod(elapsed_secs, 60)
-                        time_str = f"{mins} min {secs} sec" if mins > 0 else f"{secs} sec"
-                        
-                        pct = int((processed_count / total_snps) * 100)
-                        progress_bar.progress(pct / 100.0)
-                        status_text.markdown(f"⚙️ **{pct}% Completed** ({processed_count}/{total_snps} SNPs) | ⏱️ **Elapsed Time:** {time_str}")
+                                continue
+
+                            left_flank = str(fasta_obj[actual_chrom][max(0, pos_0 - flank_len):pos_0].seq).upper()
+                            right_flank = str(fasta_obj[actual_chrom][pos_0 + len(ref):pos_0 + len(ref) + flank_len].seq).upper()
+                            
+                            f_seq, r_seq, f_tm, r_tm, p_size_val, p_ref, p_alt, form_snp, c_prof, enz_c, enz_l = design_marker(
+                                left_flank, ref, alt, right_flank, snp_id, primer3_args, f_len
+                            )
+                            
+                            all_enzymes.extend(enz_l)
+                            results.append({
+                                'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
+                                'Forward_Primer': f_seq, 'Reverse_Primer': r_seq, 'PCR_Size_bp': p_size_val,
+                                'Probe_REF': p_ref, 'Probe_ALT': p_alt, 'Formatted_SNP_[REF/ALT]': form_snp,
+                                'Compatible_Enzyme_Count': enz_c, 'Used_Enzyme_List': enz_l, 'CAPS_Restriction_Profile': c_prof
+                            })
+                        else:
+                            results.append({
+                                'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': "-", 'POS': pos, 'REF': ref, 'ALT': alt,
+                                'Forward_Primer': "Not Found in FASTA", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
+                                'Probe_REF': "-", 'Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
+                                'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
+                                'CAPS_Restriction_Profile': f"VCF '{chrom}' did not match FASTA"
+                            })
                     
+                    # HER 100LÜK BATCH SONUNDA EKRANI VE SÜREYİ GÜNCELLE
+                    processed_count = end_idx
                     elapsed_secs = int(time.time() - start_time)
                     mins, secs = divmod(elapsed_secs, 60)
                     time_str = f"{mins} min {secs} sec" if mins > 0 else f"{secs} sec"
                     
-                    status_container.update(label=f"✅ Analysis Complete! ({total_snps} SNPs in {time_str})", state="complete", expanded=False)
-                    
-                    st.session_state['result_df'] = pd.DataFrame(results)
-                    st.session_state['all_enzymes'] = all_enzymes
-                    st.session_state['chrom_lengths'] = chrom_lengths
-                    
-                except Exception as e:
-                    status_container.update(label="❌ Error", state="error")
-                    st.error(f"An error occurred during processing: {str(e)}")
-                finally:
-                    if fasta_obj is not None:
-                        fasta_obj.close()
-                    if os.path.exists(fasta_path):
-                        os.remove(fasta_path)
-                    if os.path.exists(fasta_path + ".fai"):
-                        os.remove(fasta_path + ".fai")
+                    pct = int((processed_count / total_snps) * 100)
+                    progress_bar.progress(pct / 100.0)
+                    status_text.markdown(f"⚙️ **{pct}% Completed** ({processed_count}/{total_snps} SNPs) | ⏱️ **Elapsed Time:** {time_str}")
+                
+                elapsed_secs = int(time.time() - start_time)
+                mins, secs = divmod(elapsed_secs, 60)
+                time_str = f"{mins} min {secs} sec" if mins > 0 else f"{secs} sec"
+                
+                status_text.markdown(f"✅ **100% Completed** ({total_snps}/{total_snps} SNPs) in **{time_str}** - Rendering results...")
+                time.sleep(0.5)
+                
+                st.session_state['result_df'] = pd.DataFrame(results)
+                st.session_state['all_enzymes'] = all_enzymes
+                st.session_state['chrom_lengths'] = chrom_lengths
+                
+            except Exception as e:
+                st.error(f"An error occurred during processing: {str(e)}")
+            finally:
+                fasta_obj.close()
+                os.remove(fasta_path)
+                if os.path.exists(fasta_path + ".fai"): os.remove(fasta_path + ".fai")
 
 # --- DASHBOARD UI (OTURUM HAFIZASINDAN BESLENİR, KAYBOLMAZ) ---
 if 'result_df' in st.session_state:
@@ -544,8 +514,7 @@ if 'result_df' in st.session_state:
     st.markdown("## 🔍 Targeted Analysis & Filtering")
     c1, c2, c3, c4 = st.columns(4)
     all_chroms = ["All"] + sorted(list(res_df['FASTA_Header'].unique()))
-    if "-" in all_chroms:
-        all_chroms.remove("-")
+    if "-" in all_chroms: all_chroms.remove("-")
     
     sel_chrom = c1.selectbox("Target Chromosome", all_chroms)
     sel_start = c2.number_input("Region Start (bp)", value=0, min_value=0)
@@ -571,7 +540,7 @@ if 'result_df' in st.session_state:
     
     total_snp = len(filt_df)
     mapped_snp = len(filt_df[filt_df['FASTA_Header'] != "-"])
-    primer_success = len(filt_df[~filt_df['Forward_Primer'].isin(["Primer Not Found", "Not Found in FASTA", "REF Mismatch", "No Restriction Site"])])
+    primer_success = len(filt_df[(filt_df['Forward_Primer'] != "Primer Not Found") & (filt_df['Forward_Primer'] != "Not Found in FASTA") & (filt_df['Forward_Primer'] != "REF Mismatch")])
     caps_success = len(filt_df[filt_df['Compatible_Enzyme_Count'] > 0])
     
     m1, m2, m3, m4 = st.columns(4)
