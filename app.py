@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import io
 import tempfile
@@ -7,15 +8,14 @@ import os
 import shutil
 import gzip
 import re
+import time
 from pyfaidx import Fasta
 from Bio.Seq import Seq
 from Bio import Restriction
-from collections import Counter
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import plotly.graph_objects as go
 import primer3
-import time
 
 st.set_page_config(page_title="AutoCAPS: Advanced Marker Designer", layout="wide", initial_sidebar_state="expanded")
 
@@ -47,29 +47,40 @@ st.markdown("### Standalone Bioinformatics Pipeline for Automated Marker Convers
 st.markdown("<div class='credit-text'>System Architect & Lead Developer: Assoc. Prof. Dr. Ibrahim Celik</div>", unsafe_allow_html=True)
 st.divider()
 
+# Enzim paketini global olarak bir kez yükle
+GLOBAL_BATCH = Restriction.CommOnly
+
 def parse_vcf(file_obj):
-    lines = []
-    for line in io.TextIOWrapper(file_obj, encoding='utf-8'):
-        if line.startswith('##'): continue
-        lines.append(line)
-    df = pd.read_csv(io.StringIO(''.join(lines)), sep='\t')
+    raw_bytes = file_obj.getvalue()
+    text = raw_bytes.decode('utf-8', errors='replace')
+    lines = [line for line in text.splitlines() if not line.startswith('##')]
+    if not lines:
+        return pd.DataFrame()
+    df = pd.read_csv(io.StringIO('\n'.join(lines)), sep='\t')
     df.rename(columns={'#CHROM': 'CHROM'}, inplace=True)
     if 'ID' in df.columns:
-        df['ID'] = df.apply(lambda row: f"{row['CHROM']}_{row['POS']}" if row['ID'] == '.' or pd.isna(row['ID']) else row['ID'], axis=1)
+        mask = (df['ID'].astype(str) == '.') | df['ID'].isna()
+        df.loc[mask, 'ID'] = df.loc[mask, 'CHROM'].astype(str) + "_" + df.loc[mask, 'POS'].astype(str)
+    else:
+        df['ID'] = df['CHROM'].astype(str) + "_" + df['POS'].astype(str)
     return df
 
 def find_fasta_chrom(chrom, fasta_keys):
-    if chrom in fasta_keys: return chrom
+    if chrom in fasta_keys:
+        return chrom
     chrom_base = chrom.split('.')[0] if '.' in chrom else chrom
     for k in fasta_keys:
         k_base = k.split(' ')[0]
         k_base_no_ver = k_base.split('.')[0] if '.' in k_base else k_base
-        if chrom_base == k_base_no_ver: return k
-        if chrom_base.lower().replace('chr', '') == k_base_no_ver.lower().replace('chr', ''): return k
+        if chrom_base == k_base_no_ver:
+            return k
+        if chrom_base.lower().replace('chr', '') == k_base_no_ver.lower().replace('chr', ''):
+            return k
     return None
 
 def get_fragments(cut_positions, total_len):
-    if not cut_positions: return f"{total_len}bp (No Cut)"
+    if not cut_positions:
+        return f"{total_len}bp (No Cut)"
     frags, last_pos = [], 0
     for cut in sorted(cut_positions):
         frags.append(cut - last_pos)
@@ -78,7 +89,8 @@ def get_fragments(cut_positions, total_len):
     return " + ".join([f"{f}bp" for f in frags if f > 0])
 
 def get_frag_list(cuts, total):
-    if not cuts: return [total]
+    if not cuts:
+        return [total]
     f, last = [], 0
     for c in sorted(cuts):
         f.append(c - last)
@@ -87,17 +99,19 @@ def get_frag_list(cuts, total):
     return [x for x in f if x > 0]
 
 def analyze_amplicon(amplicon_ref, amplicon_alt, ref, alt):
-    batch = Restriction.CommOnly
     seq_ref, seq_alt = Seq(str(amplicon_ref)), Seq(str(amplicon_alt))
-    res_ref, res_alt = batch.search(seq_ref), batch.search(seq_alt)
+    res_ref, res_alt = GLOBAL_BATCH.search(seq_ref), GLOBAL_BATCH.search(seq_alt)
     
     profiles, enz_list = [], []
-    for enz in batch:
+    for enz in GLOBAL_BATCH:
         c_ref, c_alt = res_ref.get(enz, []), res_alt.get(enz, [])
         if c_ref != c_alt:
-            if len(c_ref) > 2 or len(c_alt) > 2: continue
-            f_ref_list, f_alt_list = get_frag_list(c_ref, len(amplicon_ref)), get_frag_list(c_alt, len(amplicon_alt))
-            if any(x < 15 for x in f_ref_list) or any(x < 15 for x in f_alt_list): continue
+            if len(c_ref) > 2 or len(c_alt) > 2:
+                continue
+            f_ref_list = get_frag_list(c_ref, len(amplicon_ref))
+            f_alt_list = get_frag_list(c_alt, len(amplicon_alt))
+            if any(x < 15 for x in f_ref_list) or any(x < 15 for x in f_alt_list):
+                continue
             
             frag_ref = get_fragments(c_ref, len(amplicon_ref))
             frag_alt = get_fragments(c_alt, len(amplicon_alt))
@@ -106,10 +120,31 @@ def analyze_amplicon(amplicon_ref, amplicon_alt, ref, alt):
             
     return " || ".join(profiles) if profiles else "No Suitable/Selective Enzyme Found", len(profiles), enz_list
 
+def has_polymorphic_site(left_flank, ref, alt, right_flank):
+    """
+    SNP merkezinde (+-15 bp) polimorfik kesim yaratan en az bir enzim var mı kontrol eder.
+    Yoksa Primer3 çalıştırıp sistemi kilitlemez.
+    """
+    c_left = left_flank[-15:] if len(left_flank) >= 15 else left_flank
+    c_right = right_flank[:15] if len(right_flank) >= 15 else right_flank
+    s_ref = Seq(re.sub(r'[^ACGT]', 'N', (c_left + ref + c_right).upper()))
+    s_alt = Seq(re.sub(r'[^ACGT]', 'N', (c_left + alt + c_right).upper()))
+    
+    r_ref = GLOBAL_BATCH.search(s_ref)
+    r_alt = GLOBAL_BATCH.search(s_alt)
+    for enz in GLOBAL_BATCH:
+        if r_ref.get(enz, []) != r_alt.get(enz, []):
+            return True
+    return False
+
 def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
     half_f = f_len // 2
     c_left = left_flank[-half_f:] if len(left_flank) >= half_f else left_flank
     formatli_snp = f"{c_left}[{ref}/{alt}]{right_flank[:half_f]}"
+    
+    # Hızlı Ön-Kontrol: SNP kesim bölgesi yaratmıyorsa Primer3'ü atla
+    if not has_polymorphic_site(left_flank, ref, alt, right_flank):
+        return "No Restriction Site", "-", 0, 0, 0, "-", "-", formatli_snp, "No Suitable/Selective Enzyme Found", 0, []
     
     seq_ref = left_flank + ref + right_flank
     seq_alt = left_flank + alt + right_flank
@@ -132,7 +167,6 @@ def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
         'PRIMER_OPT_GC_PERCENT': p_args['gc_opt'],
         'PRIMER_MAX_GC': p_args['gc_max'],
         'PRIMER_PRODUCT_SIZE_RANGE': [p_args['prod_size']],
-        
         'PRIMER_SALT_MONOVALENT': p_args['salt_mono'],
         'PRIMER_SALT_DIVALENT': p_args['salt_div'],
         'PRIMER_DNTP_CONC': p_args['salt_dntp'],
@@ -144,17 +178,7 @@ def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
         'PRIMER_MAX_POLY_X': p_args['max_poly_x'],
         'PRIMER_CG_CLAMP': p_args['cg_clamp'],
         'PRIMER_MAX_GC_IN_3END': p_args['max_gc_3end'],
-        
-        'PRIMER_PICK_INTERNAL_OLIGO': 1,
-        'PRIMER_INTERNAL_OPT_SIZE': p_args['io_s_opt'],
-        'PRIMER_INTERNAL_MIN_SIZE': p_args['io_s_min'],
-        'PRIMER_INTERNAL_MAX_SIZE': p_args['io_s_max'],
-        'PRIMER_INTERNAL_OPT_TM': p_args['io_t_opt'],
-        'PRIMER_INTERNAL_MIN_TM': p_args['io_t_min'],
-        'PRIMER_INTERNAL_MAX_TM': p_args['io_t_max'],
-        'PRIMER_INTERNAL_MIN_GC': p_args['io_g_min'],
-        'PRIMER_INTERNAL_OPT_GC_PERCENT': p_args['io_g_opt'],
-        'PRIMER_INTERNAL_MAX_GC': p_args['io_g_max']
+        'PRIMER_PICK_INTERNAL_OLIGO': 0
     }
     
     try:
@@ -182,7 +206,7 @@ def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
             
             c_prof, enz_c, enz_l = analyze_amplicon(amplicon_ref, amplicon_alt, ref, alt)
             return f_seq, r_seq, f_tm_val, r_tm_val, pcr_size, p_ref, p_alt, formatli_snp, c_prof, enz_c, enz_l
-    except Exception as e:
+    except Exception:
         pass
         
     return "Primer Not Found", "Primer Not Found", 0, 0, 0, "-", "-", formatli_snp, "No Suitable Amplicon", 0, []
@@ -200,7 +224,8 @@ def plot_vertical_map(df, chrom_lengths, selected_enzyme):
     max_len_mb = 0
     for i, chrom in enumerate(valid_chroms):
         length_mb = chrom_lengths[chrom] / 1_000_000
-        if length_mb > max_len_mb: max_len_mb = length_mb
+        if length_mb > max_len_mb:
+            max_len_mb = length_mb
         
         fig.add_trace(go.Scatter(
             x=[chrom, chrom], y=[0, length_mb], 
@@ -243,7 +268,8 @@ def parse_profile_for_gel(profile_str, enzyme, ref, alt, pcr_size):
             target_prof = prof
             break
             
-    if not target_prof: return frag_data
+    if not target_prof:
+        return frag_data
     
     alleles_split = target_prof.split(" | ")
     for part in alleles_split:
@@ -391,25 +417,48 @@ if run_btn:
     if not vcf_file or not fasta_file:
         st.error("Please upload both VCF and FASTA files.")
     else:
-        st.warning("⚠️ **Pipeline is running!** Depending on your VCF size, this may take a few minutes. **Please DO NOT close or refresh this tab.**")
-        
+        # 1. Uyarı mesajı ve ANINDA başlayan canlı kronometre (İlk 1000 bitmesini beklemez!)
+        warning_box = st.empty()
+        timer_box = st.empty()
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        # Analiz başlar başlamaz ilk 1000 bitmesini beklemeden süreyi ekranda başlat
-        start_time = time.time()
-        status_text.markdown("⚙️ **0% Completed** (Initializing pipeline & reading VCF...) | ⏱️ **Elapsed Time:** 0 sec")
+        warning_box.warning("⚠️ **Pipeline is running!** Depending on your VCF size, this may take a few minutes. **Please DO NOT close or refresh this tab.**")
         
+        with timer_box:
+            components.html("""
+                <div style="font-family: sans-serif; font-size: 16px; font-weight: 600; color: #0ea5e9; padding: 8px 12px; background: rgba(14, 165, 233, 0.1); border-left: 4px solid #0ea5e9; border-radius: 4px;">
+                    ⏱️ Live Elapsed Time: <span id="live_timer">0 min 0 sec</span>
+                </div>
+                <script>
+                    var startTime = Date.now();
+                    setInterval(function() {
+                        var elapsed = Math.floor((Date.now() - startTime) / 1000);
+                        var mins = Math.floor(elapsed / 60);
+                        var secs = elapsed % 60;
+                        var el = document.getElementById("live_timer");
+                        if (el) {
+                            el.innerText = mins + " min " + secs + " sec";
+                        }
+                    }, 1000);
+                </script>
+            """, height=50)
+            
+        status_text.markdown("⚙️ **0% Completed** (Reading VCF and Reference Genome in 1000-SNP batches...)")
+        time.sleep(0.1)  # Tarayıcının uyarıyı ve sayacı ekrana çizmesi için zorunlu nefes
+        
+        start_time = time.time()
         df = parse_vcf(vcf_file)
         valid_bases = ['A', 'C', 'G', 'T']
-        df = df[~df['ALT'].str.contains(',', na=False)]
-        df = df[df['REF'].isin(valid_bases) & df['ALT'].isin(valid_bases)]
-        df = df.drop_duplicates(subset=['CHROM', 'POS', 'REF', 'ALT']).reset_index(drop=True)
+        if not df.empty:
+            df = df[~df['ALT'].astype(str).str.contains(',', na=False)]
+            df = df[df['REF'].isin(valid_bases) & df['ALT'].isin(valid_bases)]
+            df = df.drop_duplicates(subset=['CHROM', 'POS', 'REF', 'ALT']).reset_index(drop=True)
         
         if len(df) == 0: 
+            timer_box.empty()
             st.warning("No suitable Biallelic SNP found in this VCF file!")
         else:
-            file_extension = ".fa.gz" if fasta_file.name.endswith(".gz") else ".fasta"
             with tempfile.NamedTemporaryFile(delete=False, suffix=".fasta") as tmp_fasta:
                 if fasta_file.name.endswith(".gz"):
                     with gzip.open(fasta_file, 'rb') as f_in:
@@ -421,17 +470,15 @@ if run_btn:
             try:
                 fasta_obj = Fasta(fasta_path)
                 fasta_keys = list(fasta_obj.keys())
+                chrom_map_cache = {}
                 
                 results, all_enzymes = [], []
                 chrom_lengths = {}
                 total_snps = len(df)
-                batch_size = 1000  # 1000'erli gruplar halinde işleme
+                batch_size = 1000  # 1000'erli gruplar halinde gönderim
                 
-                # İlk 1000'lik grup başlamadan hemen önce ekranda 0/Toplam SNP ve geçen süreyi göster
-                elapsed_secs = int(time.time() - start_time)
-                mins, secs = divmod(elapsed_secs, 60)
-                time_str = f"{mins} min {secs} sec" if mins > 0 else f"{secs} sec"
-                status_text.markdown(f"⚙️ **0% Completed** (0/{total_snps} SNPs) | ⏱️ **Elapsed Time:** {time_str}")
+                status_text.markdown(f"⚙️ **0% Completed** (0/{total_snps} SNPs) - Processing batch 1...")
+                time.sleep(0.05)
                 
                 for start_idx in range(0, total_snps, batch_size):
                     end_idx = min(start_idx + batch_size, total_snps)
@@ -439,7 +486,10 @@ if run_btn:
                     
                     for _, row in batch_df.iterrows():
                         chrom, pos, ref, alt, snp_id = str(row['CHROM']), int(row['POS']), str(row['REF']), str(row['ALT']), str(row['ID'])
-                        actual_chrom = find_fasta_chrom(chrom, fasta_keys)
+                        
+                        if chrom not in chrom_map_cache:
+                            chrom_map_cache[chrom] = find_fasta_chrom(chrom, fasta_keys)
+                        actual_chrom = chrom_map_cache[chrom]
                         
                         if actual_chrom:
                             if actual_chrom not in chrom_lengths:
@@ -481,7 +531,7 @@ if run_btn:
                                 'CAPS_Restriction_Profile': f"VCF '{chrom}' did not match FASTA"
                             })
                     
-                    # HER 1000'LÜK BATCH SONUNDA EKRANI VE GEÇEN SÜREYİ GÜNCELLE
+                    # HER 1000'LÜK BATCH SONUNDA EKRANI GÜNCELLE
                     processed_count = end_idx
                     elapsed_secs = int(time.time() - start_time)
                     mins, secs = divmod(elapsed_secs, 60)
@@ -489,13 +539,16 @@ if run_btn:
                     
                     pct = int((processed_count / total_snps) * 100)
                     progress_bar.progress(pct / 100.0)
-                    status_text.markdown(f"⚙️ **{pct}% Completed** ({processed_count}/{total_snps} SNPs) | ⏱️ **Elapsed Time:** {time_str}")
+                    status_text.markdown(f"⚙️ **{pct}% Completed** ({processed_count}/{total_snps} SNPs) | ⏱️ **Batch Elapsed Time:** {time_str}")
+                    time.sleep(0.02)
                 
                 elapsed_secs = int(time.time() - start_time)
                 mins, secs = divmod(elapsed_secs, 60)
                 time_str = f"{mins} min {secs} sec" if mins > 0 else f"{secs} sec"
-                status_text.markdown(f"✅ **100% Completed** ({total_snps}/{total_snps} SNPs) | ⏱️ **Total Time:** {time_str} - Rendering analysis results...")
-                time.sleep(0.5)
+                
+                timer_box.empty()
+                warning_box.success(f"✅ **Analysis Complete!** Processed {total_snps} SNPs in **{time_str}**. Results are locked in session memory.")
+                status_text.empty()
                 
                 st.session_state['result_df'] = pd.DataFrame(results)
                 st.session_state['all_enzymes'] = all_enzymes
@@ -506,7 +559,8 @@ if run_btn:
             finally:
                 fasta_obj.close()
                 os.remove(fasta_path)
-                if os.path.exists(fasta_path + ".fai"): os.remove(fasta_path + ".fai")
+                if os.path.exists(fasta_path + ".fai"):
+                    os.remove(fasta_path + ".fai")
 
 # --- DASHBOARD UI (OTURUM HAFIZASINDAN BESLENİR, KAYBOLMAZ) ---
 if 'result_df' in st.session_state:
@@ -517,7 +571,8 @@ if 'result_df' in st.session_state:
     st.markdown("## 🔍 Targeted Analysis & Filtering")
     c1, c2, c3, c4 = st.columns(4)
     all_chroms = ["All"] + sorted(list(res_df['FASTA_Header'].unique()))
-    if "-" in all_chroms: all_chroms.remove("-")
+    if "-" in all_chroms:
+        all_chroms.remove("-")
     
     sel_chrom = c1.selectbox("Target Chromosome", all_chroms)
     sel_start = c2.number_input("Region Start (bp)", value=0, min_value=0)
@@ -543,7 +598,7 @@ if 'result_df' in st.session_state:
     
     total_snp = len(filt_df)
     mapped_snp = len(filt_df[filt_df['FASTA_Header'] != "-"])
-    primer_success = len(filt_df[(filt_df['Forward_Primer'] != "Primer Not Found") & (filt_df['Forward_Primer'] != "Not Found in FASTA") & (filt_df['Forward_Primer'] != "REF Mismatch")])
+    primer_success = len(filt_df[~filt_df['Forward_Primer'].isin(["Primer Not Found", "Not Found in FASTA", "REF Mismatch", "No Restriction Site"])])
     caps_success = len(filt_df[filt_df['Compatible_Enzyme_Count'] > 0])
     
     m1, m2, m3, m4 = st.columns(4)
