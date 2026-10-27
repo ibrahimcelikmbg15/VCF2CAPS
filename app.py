@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 import io
 import tempfile
@@ -47,7 +46,6 @@ st.markdown("### Standalone Bioinformatics Pipeline for Automated Marker Convers
 st.markdown("<div class='credit-text'>System Architect & Lead Developer: Assoc. Prof. Dr. Ibrahim Celik</div>", unsafe_allow_html=True)
 st.divider()
 
-# Enzim paketini global olarak bir kez yükle
 GLOBAL_BATCH = Restriction.CommOnly
 
 def parse_vcf(file_obj):
@@ -121,10 +119,6 @@ def analyze_amplicon(amplicon_ref, amplicon_alt, ref, alt):
     return " || ".join(profiles) if profiles else "No Suitable/Selective Enzyme Found", len(profiles), enz_list
 
 def has_polymorphic_site(left_flank, ref, alt, right_flank):
-    """
-    SNP merkezinde (+-15 bp) polimorfik kesim yaratan en az bir enzim var mı kontrol eder.
-    Yoksa Primer3 çalıştırıp sistemi kilitlemez.
-    """
     c_left = left_flank[-15:] if len(left_flank) >= 15 else left_flank
     c_right = right_flank[:15] if len(right_flank) >= 15 else right_flank
     s_ref = Seq(re.sub(r'[^ACGT]', 'N', (c_left + ref + c_right).upper()))
@@ -142,7 +136,6 @@ def design_marker(left_flank, ref, alt, right_flank, snp_id, p_args, f_len):
     c_left = left_flank[-half_f:] if len(left_flank) >= half_f else left_flank
     formatli_snp = f"{c_left}[{ref}/{alt}]{right_flank[:half_f]}"
     
-    # Hızlı Ön-Kontrol: SNP kesim bölgesi yaratmıyorsa Primer3'ü atla
     if not has_polymorphic_site(left_flank, ref, alt, right_flank):
         return "No Restriction Site", "-", 0, 0, 0, "-", "-", formatli_snp, "No Suitable/Selective Enzyme Found", 0, []
     
@@ -417,150 +410,130 @@ if run_btn:
     if not vcf_file or not fasta_file:
         st.error("Please upload both VCF and FASTA files.")
     else:
-        # 1. Uyarı mesajı ve ANINDA başlayan canlı kronometre (İlk 1000 bitmesini beklemez!)
-        warning_box = st.empty()
-        timer_box = st.empty()
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+        # Streamlit'in kendi yerel durum bileşeni (Asla kaybolmaz ve anında görünür)
+        status_container = st.status("🚀 Pipeline is running... Please DO NOT close or refresh this tab.", expanded=True)
         
-        warning_box.warning("⚠️ **Pipeline is running!** Depending on your VCF size, this may take a few minutes. **Please DO NOT close or refresh this tab.**")
-        
-        with timer_box:
-            components.html("""
-                <div style="font-family: sans-serif; font-size: 16px; font-weight: 600; color: #0ea5e9; padding: 8px 12px; background: rgba(14, 165, 233, 0.1); border-left: 4px solid #0ea5e9; border-radius: 4px;">
-                    ⏱️ Live Elapsed Time: <span id="live_timer">0 min 0 sec</span>
-                </div>
-                <script>
-                    var startTime = Date.now();
-                    setInterval(function() {
-                        var elapsed = Math.floor((Date.now() - startTime) / 1000);
-                        var mins = Math.floor(elapsed / 60);
-                        var secs = elapsed % 60;
-                        var el = document.getElementById("live_timer");
-                        if (el) {
-                            el.innerText = mins + " min " + secs + " sec";
-                        }
-                    }, 1000);
-                </script>
-            """, height=50)
+        with status_container:
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             
-        status_text.markdown("⚙️ **0% Completed** (Reading VCF and Reference Genome in 1000-SNP batches...)")
-        time.sleep(0.1)  # Tarayıcının uyarıyı ve sayacı ekrana çizmesi için zorunlu nefes
-        
-        start_time = time.time()
-        df = parse_vcf(vcf_file)
-        valid_bases = ['A', 'C', 'G', 'T']
-        if not df.empty:
-            df = df[~df['ALT'].astype(str).str.contains(',', na=False)]
-            df = df[df['REF'].isin(valid_bases) & df['ALT'].isin(valid_bases)]
-            df = df.drop_duplicates(subset=['CHROM', 'POS', 'REF', 'ALT']).reset_index(drop=True)
-        
-        if len(df) == 0: 
-            timer_box.empty()
-            st.warning("No suitable Biallelic SNP found in this VCF file!")
-        else:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".fasta") as tmp_fasta:
-                if fasta_file.name.endswith(".gz"):
-                    with gzip.open(fasta_file, 'rb') as f_in:
-                        shutil.copyfileobj(f_in, tmp_fasta)
-                else:
-                    shutil.copyfileobj(fasta_file, tmp_fasta)
-                fasta_path = tmp_fasta.name
+            start_time = time.time()
+            status_text.markdown("⚙️ **0% Completed** | ⏱️ **Elapsed Time:** 0 sec (Reading VCF file...)")
             
-            try:
-                fasta_obj = Fasta(fasta_path)
-                fasta_keys = list(fasta_obj.keys())
-                chrom_map_cache = {}
+            df = parse_vcf(vcf_file)
+            valid_bases = ['A', 'C', 'G', 'T']
+            if not df.empty:
+                df = df[~df['ALT'].astype(str).str.contains(',', na=False)]
+                df = df[df['REF'].isin(valid_bases) & df['ALT'].isin(valid_bases)]
+                df = df.drop_duplicates(subset=['CHROM', 'POS', 'REF', 'ALT']).reset_index(drop=True)
+            
+            if len(df) == 0: 
+                status_container.update(label="❌ Error", state="error")
+                st.warning("No suitable Biallelic SNP found in this VCF file!")
+            else:
+                elapsed_secs = int(time.time() - start_time)
+                status_text.markdown(f"⚙️ **0% Completed** (0/{len(df)} SNPs) | ⏱️ **Elapsed Time:** {elapsed_secs} sec (Extracting Reference Genome...)")
                 
-                results, all_enzymes = [], []
-                chrom_lengths = {}
-                total_snps = len(df)
-                batch_size = 1000  # 1000'erli gruplar halinde gönderim
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".fasta") as tmp_fasta:
+                    if fasta_file.name.endswith(".gz"):
+                        with gzip.open(fasta_file, 'rb') as f_in:
+                            shutil.copyfileobj(f_in, tmp_fasta)
+                    else:
+                        shutil.copyfileobj(fasta_file, tmp_fasta)
+                    fasta_path = tmp_fasta.name
                 
-                status_text.markdown(f"⚙️ **0% Completed** (0/{total_snps} SNPs) - Processing batch 1...")
-                time.sleep(0.05)
-                
-                for start_idx in range(0, total_snps, batch_size):
-                    end_idx = min(start_idx + batch_size, total_snps)
-                    batch_df = df.iloc[start_idx:end_idx]
+                fasta_obj = None
+                try:
+                    fasta_obj = Fasta(fasta_path)
+                    fasta_keys = list(fasta_obj.keys())
+                    chrom_map_cache = {}
                     
-                    for _, row in batch_df.iterrows():
-                        chrom, pos, ref, alt, snp_id = str(row['CHROM']), int(row['POS']), str(row['REF']), str(row['ALT']), str(row['ID'])
+                    results, all_enzymes = [], []
+                    chrom_lengths = {}
+                    total_snps = len(df)
+                    batch_size = 1000  # 1000'erli gruplar halinde işleme
+                    
+                    for start_idx in range(0, total_snps, batch_size):
+                        end_idx = min(start_idx + batch_size, total_snps)
+                        batch_df = df.iloc[start_idx:end_idx]
                         
-                        if chrom not in chrom_map_cache:
-                            chrom_map_cache[chrom] = find_fasta_chrom(chrom, fasta_keys)
-                        actual_chrom = chrom_map_cache[chrom]
-                        
-                        if actual_chrom:
-                            if actual_chrom not in chrom_lengths:
-                                chrom_lengths[actual_chrom] = len(fasta_obj[actual_chrom])
-                                
-                            pos_0 = pos - 1
-                            actual_ref_base = str(fasta_obj[actual_chrom][pos_0 : pos_0 + len(ref)].seq).upper()
+                        for _, row in batch_df.iterrows():
+                            chrom, pos, ref, alt, snp_id = str(row['CHROM']), int(row['POS']), str(row['REF']), str(row['ALT']), str(row['ID'])
                             
-                            if actual_ref_base != ref.upper():
+                            if chrom not in chrom_map_cache:
+                                chrom_map_cache[chrom] = find_fasta_chrom(chrom, fasta_keys)
+                            actual_chrom = chrom_map_cache[chrom]
+                            
+                            if actual_chrom:
+                                if actual_chrom not in chrom_lengths:
+                                    chrom_lengths[actual_chrom] = len(fasta_obj[actual_chrom])
+                                    
+                                pos_0 = pos - 1
+                                actual_ref_base = str(fasta_obj[actual_chrom][pos_0 : pos_0 + len(ref)].seq).upper()
+                                
+                                if actual_ref_base != ref.upper():
+                                    results.append({
+                                        'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
+                                        'Forward_Primer': "REF Mismatch", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
+                                        'Probe_REF': "-", 'Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
+                                        'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
+                                        'CAPS_Restriction_Profile': f"ERROR: VCF REF ({ref}) != FASTA ({actual_ref_base})"
+                                    })
+                                    continue
+
+                                left_flank = str(fasta_obj[actual_chrom][max(0, pos_0 - flank_len):pos_0].seq).upper()
+                                right_flank = str(fasta_obj[actual_chrom][pos_0 + len(ref):pos_0 + len(ref) + flank_len].seq).upper()
+                                
+                                f_seq, r_seq, f_tm, r_tm, p_size_val, p_ref, p_alt, form_snp, c_prof, enz_c, enz_l = design_marker(
+                                    left_flank, ref, alt, right_flank, snp_id, primer3_args, f_len
+                                )
+                                
+                                all_enzymes.extend(enz_l)
                                 results.append({
                                     'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
-                                    'Forward_Primer': "REF Mismatch", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
+                                    'Forward_Primer': f_seq, 'Reverse_Primer': r_seq, 'PCR_Size_bp': p_size_val,
+                                    'Probe_REF': p_ref, 'Probe_ALT': p_alt, 'Formatted_SNP_[REF/ALT]': form_snp,
+                                    'Compatible_Enzyme_Count': enz_c, 'Used_Enzyme_List': enz_l, 'CAPS_Restriction_Profile': c_prof
+                                })
+                            else:
+                                results.append({
+                                    'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': "-", 'POS': pos, 'REF': ref, 'ALT': alt,
+                                    'Forward_Primer': "Not Found in FASTA", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
                                     'Probe_REF': "-", 'Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
                                     'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
-                                    'CAPS_Restriction_Profile': f"ERROR: VCF REF ({ref}) != FASTA ({actual_ref_base})"
+                                    'CAPS_Restriction_Profile': f"VCF '{chrom}' did not match FASTA"
                                 })
-                                continue
-
-                            left_flank = str(fasta_obj[actual_chrom][max(0, pos_0 - flank_len):pos_0].seq).upper()
-                            right_flank = str(fasta_obj[actual_chrom][pos_0 + len(ref):pos_0 + len(ref) + flank_len].seq).upper()
-                            
-                            f_seq, r_seq, f_tm, r_tm, p_size_val, p_ref, p_alt, form_snp, c_prof, enz_c, enz_l = design_marker(
-                                left_flank, ref, alt, right_flank, snp_id, primer3_args, f_len
-                            )
-                            
-                            all_enzymes.extend(enz_l)
-                            results.append({
-                                'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': actual_chrom, 'POS': pos, 'REF': ref, 'ALT': alt,
-                                'Forward_Primer': f_seq, 'Reverse_Primer': r_seq, 'PCR_Size_bp': p_size_val,
-                                'Probe_REF': p_ref, 'Probe_ALT': p_alt, 'Formatted_SNP_[REF/ALT]': form_snp,
-                                'Compatible_Enzyme_Count': enz_c, 'Used_Enzyme_List': enz_l, 'CAPS_Restriction_Profile': c_prof
-                            })
-                        else:
-                            results.append({
-                                'SNP_ID': snp_id, 'CHROM': chrom, 'FASTA_Header': "-", 'POS': pos, 'REF': ref, 'ALT': alt,
-                                'Forward_Primer': "Not Found in FASTA", 'Reverse_Primer': "-", 'PCR_Size_bp': 0,
-                                'Probe_REF': "-", 'Probe_ALT': "-", 'Formatted_SNP_[REF/ALT]': "-",
-                                'Compatible_Enzyme_Count': 0, 'Used_Enzyme_List': [], 
-                                'CAPS_Restriction_Profile': f"VCF '{chrom}' did not match FASTA"
-                            })
+                        
+                        # HER 1000'LÜK BATCH SONUNDA EKRANI VE SÜREYİ GÜNCELLE
+                        processed_count = end_idx
+                        elapsed_secs = int(time.time() - start_time)
+                        mins, secs = divmod(elapsed_secs, 60)
+                        time_str = f"{mins} min {secs} sec" if mins > 0 else f"{secs} sec"
+                        
+                        pct = int((processed_count / total_snps) * 100)
+                        progress_bar.progress(pct / 100.0)
+                        status_text.markdown(f"⚙️ **{pct}% Completed** ({processed_count}/{total_snps} SNPs) | ⏱️ **Elapsed Time:** {time_str}")
                     
-                    # HER 1000'LÜK BATCH SONUNDA EKRANI GÜNCELLE
-                    processed_count = end_idx
                     elapsed_secs = int(time.time() - start_time)
                     mins, secs = divmod(elapsed_secs, 60)
                     time_str = f"{mins} min {secs} sec" if mins > 0 else f"{secs} sec"
                     
-                    pct = int((processed_count / total_snps) * 100)
-                    progress_bar.progress(pct / 100.0)
-                    status_text.markdown(f"⚙️ **{pct}% Completed** ({processed_count}/{total_snps} SNPs) | ⏱️ **Batch Elapsed Time:** {time_str}")
-                    time.sleep(0.02)
-                
-                elapsed_secs = int(time.time() - start_time)
-                mins, secs = divmod(elapsed_secs, 60)
-                time_str = f"{mins} min {secs} sec" if mins > 0 else f"{secs} sec"
-                
-                timer_box.empty()
-                warning_box.success(f"✅ **Analysis Complete!** Processed {total_snps} SNPs in **{time_str}**. Results are locked in session memory.")
-                status_text.empty()
-                
-                st.session_state['result_df'] = pd.DataFrame(results)
-                st.session_state['all_enzymes'] = all_enzymes
-                st.session_state['chrom_lengths'] = chrom_lengths
-                
-            except Exception as e:
-                st.error(f"An error occurred during processing: {str(e)}")
-            finally:
-                fasta_obj.close()
-                os.remove(fasta_path)
-                if os.path.exists(fasta_path + ".fai"):
-                    os.remove(fasta_path + ".fai")
+                    status_container.update(label=f"✅ Analysis Complete! ({total_snps} SNPs in {time_str})", state="complete", expanded=False)
+                    
+                    st.session_state['result_df'] = pd.DataFrame(results)
+                    st.session_state['all_enzymes'] = all_enzymes
+                    st.session_state['chrom_lengths'] = chrom_lengths
+                    
+                except Exception as e:
+                    status_container.update(label="❌ Error", state="error")
+                    st.error(f"An error occurred during processing: {str(e)}")
+                finally:
+                    if fasta_obj is not None:
+                        fasta_obj.close()
+                    if os.path.exists(fasta_path):
+                        os.remove(fasta_path)
+                    if os.path.exists(fasta_path + ".fai"):
+                        os.remove(fasta_path + ".fai")
 
 # --- DASHBOARD UI (OTURUM HAFIZASINDAN BESLENİR, KAYBOLMAZ) ---
 if 'result_df' in st.session_state:
